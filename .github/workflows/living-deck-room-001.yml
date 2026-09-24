@@ -1,0 +1,44 @@
+name: Living Deck → ROroomOM guest room
+
+on:
+  push:
+    branches:
+      - experiment/living-deck-room-001
+  pull_request:
+    paths:
+      - 'experiments/living-deck-room-001/**'
+      - '.github/workflows/living-deck-room-001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest-room:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout ROroomOM consumer
+        uses: actions/checkout@v4
+      - name: Checkout Static Field producer
+        uses: actions/checkout@v4
+        with:
+          repository: the-static-collective/static-field
+          ref: experiment/postemahhn-living-deck-001
+          path: .test-support/static-field
+          persist-credentials: false
+      - name: Checkout Full Measure local quest receiver
+        uses: actions/checkout@v4
+        with:
+          repository: the-static-collective/full-measure-world-layer
+          ref: experiment/living-deck-quest-001
+          path: .test-support/full-measure
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test bounded room and actual producer handoff
+        env:
+          STATIC_FIELD_DECK_DIR: ${{ github.workspace }}/.test-support/static-field
+          FULL_MEASURE_QUEST_DIR: ${{ github.workspace }}/.test-support/full-measure
+        run: node --test experiments/living-deck-room-001/tests/*.test.mjs
