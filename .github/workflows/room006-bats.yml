@@ -1,0 +1,24 @@
+name: ROroomOM 006 rejoining BATs
+on:
+  push:
+    branches: [room-006-effectful-rejoin-bat]
+    paths:
+      - "experiments/rejoining_room_006/**"
+      - ".github/workflows/room006-bats.yml"
+  pull_request:
+    paths:
+      - "experiments/rejoining_room_006/**"
+      - ".github/workflows/room006-bats.yml"
+jobs:
+  bounded-room-bats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Syntax-check isolated engine, bridge and tests
+        run: python3 -m compileall -q experiments/rejoining_room_006
+      - name: Execute actual Room-006 source BATs
+        run: python3 -m unittest discover -s experiments/rejoining_room_006 -p 'test*.py' -v

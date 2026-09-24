@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROroomOM · Rejoining Room 006</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101826;color:#e6edf5}
+*{box-sizing:border-box}body{max-width:930px;margin:0 auto;padding:22px 15px 70px;line-height:1.45}
+a{color:#9ed5ff}h1{font-size:clamp(25px,5vw,42px);margin:8px 0}.eyebrow{letter-spacing:.13em;color:#9ed5ff;font-size:12px}
+.card{background:#19263a;border:1px solid #425975;border-radius:14px;padding:19px;margin:15px 0}
+.muted{color:#bed0e1}.warning{background:#423725;padding:10px;border-radius:7px}
+label{display:block;margin:13px 0 6px}textarea,input[type=text]{width:100%;font:inherit;background:#091421;color:inherit;border:1px solid #63819b;border-radius:6px;padding:12px}
+textarea{min-height:130px}button{font:inherit;cursor:pointer;padding:10px 15px;margin:8px 5px 8px 0;background:#c2ddf7;color:#101826;border:1px solid #9ebeda;border-radius:7px}
+button:disabled{opacity:.45;cursor:not-allowed}button.secondary{background:#26364a;color:inherit}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0a1522;border:1px solid #364b61;padding:12px;border-radius:8px;max-height:350px;overflow:auto;font-size:12px}
+.status{min-height:28px;color:#eecf8e}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row label{margin:0}
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #fff}
+</style></head>
+<body>
+<a href="/">← Return to ROroomOM</a>
+<div class="eyebrow">ROroomOM / 006 / EXPERIMENTAL</div>
+<h1>The Rejoining Room</h1>
+<p class="muted">Two separately witnessed histories; one Room-owned consequence. The imported joint provides history, not permission. This local page is a projection, not an executor or an authenticated human witness.</p>
+<section class="card">
+<h2>1 · Inspect the independently pinned joint</h2>
+<p class="warning">The bridge must be started with an operator-supplied pin configuration. This page cannot select or rewrite source paths, pins, parents, or authority.</p>
+<button id="inspect-joint" class="secondary">Inspect source and joint</button>
+<pre id="joint" aria-live="polite">No verified joint loaded yet.</pre>
+</section>
+<section class="card">
+<h2>2 · Prepare one consequence</h2>
+<label for="content">Exact Room-owned Markdown content</label>
+<textarea id="content" maxlength="8192" placeholder="A shared consequence that keeps both histories visible."></textarea>
+<div><button id="prepare" disabled>Prepare exact crossing</button></div>
+<pre id="preview" aria-live="polite">No crossing prepared.</pre>
+<div class="row"><label><input id="approve" type="checkbox" disabled> I inspected the exact preview and approve one Room-owned effect.</label></div>
+<div><button id="execute" disabled>Execute this exact crossing</button><button id="discard" class="secondary" disabled>Discard preview</button></div>
+<pre id="result" aria-live="polite">No effect has been attempted.</pre>
+</section>
+<section class="card">
+<h2>3 · Recover / inspect after interruption</h2>
+<p class="muted">If execution is interrupted, inspect its durable crossing address. An intent without a file requires a second explicit review before any publication.</p>
+<label for="crossing">Crossing address (roomx_…)</label>
+<input type="text" id="crossing" maxlength="70" placeholder="roomx_…">
+<div><button id="inspect-crossing" class="secondary">Inspect existing consequence</button></div>
+<pre id="recovery" aria-live="polite">No crossing inspected.</pre>
+<label><input id="approve-reconcile" type="checkbox" disabled> I inspected this exact pending effect and approve completing this durable intent.</label>
+<div><button id="reconcile" disabled>Explicitly reconcile this crossing</button></div>
+</section>
+<p class="status" id="status" role="status" aria-live="polite">Source verification required.</p>
+<script>
+'use strict';
+const $=s=>document.getElementById(s);
+let verified=null,prepared=null,recovery=null,busy=false;
+function status(message){$('status').textContent=message;}
+function print(id,thing){$(id).textContent=typeof thing==='string'?thing:JSON.stringify(thing,null,2);}
+function clearPreview(){prepared=null;$('preview').textContent='No crossing prepared.';$('approve').checked=false;$('approve').disabled=true;$('execute').disabled=true;$('discard').disabled=true;}
+function clearRecovery(){recovery=null;$('approve-reconcile').checked=false;$('approve-reconcile').disabled=true;$('reconcile').disabled=true;}
+async function request(path,body){
+ const options={cache:'no-store',credentials:'omit'};
+ if(body!==undefined){options.method='POST';options.headers={'Content-Type':'application/json','X-Room-Action':'explicit-user-confirm'};options.body=JSON.stringify(body);}
+ const r=await fetch(path,options);const data=await r.json();
+ if(!r.ok)throw Error(data.detail||('HTTP '+r.status));
+ return data;
+}
+$('inspect-joint').addEventListener('click',async()=>{
+ clearPreview();clearRecovery();$('prepare').disabled=true;verified=null;
+ try{const data=await request('/api/room/rejoin/status');verified=data;print('joint',data);$('prepare').disabled=false;status('Locally verified source displayed. No execution admitted.');}
+ catch(e){print('joint','Source unavailable or unverifiable: '+e.message);status('Source verification refused.');}
+});
+$('content').addEventListener('input',()=>{if(prepared){clearPreview();status('Draft changed; prepare a new crossing.');}});
+$('prepare').addEventListener('click',async()=>{
+ if(!verified||busy)return;busy=true;clearPreview();
+ try{const p=await request('/api/room/rejoin/prepare',{content:$('content').value});
+ prepared=p;print('preview',{candidate_id:p.candidate_id,preview:p.preview,predicted_effect:p.predicted_effect,expires_seconds:p.expires_seconds});
+ $('approve').disabled=false;$('discard').disabled=false;
+ status('Prepared only. Read the entire preview before authorizing.');
+ }catch(e){status('Preparation refused: '+e.message);}finally{busy=false;}
+});
+$('approve').addEventListener('change',()=>{$('execute').disabled=!prepared||!$('approve').checked||busy;});
+$('discard').addEventListener('click',()=>{clearPreview();status('Preview discarded. Server ticket expires automatically.');});
+$('execute').addEventListener('click',async()=>{
+ if(!prepared||!$('approve').checked||busy)return;
+ const p=prepared;clearPreview();busy=true;status('Execution requested; outcome not confirmed yet.');
+ try{const r=await request('/api/room/rejoin/execute',{ticket:p.ticket,candidate_id:p.candidate_id,approval:'I approve this exact Room-owned rejoining effect'});
+ print('result',r);if(r.receipt){$('crossing').value=r.receipt.crossing_id;}
+ status('Completed: inspect durable consequence and both parent return addresses.');
+ }catch(e){status('Outcome unconfirmed: '+e.message+'. Inspect durable crossing before any retry.');}
+ finally{busy=false;}
+});
+$('crossing').addEventListener('input',clearRecovery);
+$('inspect-crossing').addEventListener('click',async()=>{
+ clearRecovery();
+ try{const id=$('crossing').value.trim();const r=await request('/api/room/rejoin/receipt?id='+encodeURIComponent(id));recovery=r;print('recovery',r);
+ if(r.status==='accepted-needs-explicit-reconcile'){$('approve-reconcile').disabled=false;status('Accepted intent but no artifact: inspect exact effect and explicitly reconcile.');}
+ else{status('Durable crossing inspected; no new effect requested.');}
+ }catch(e){print('recovery','Inspection refused: '+e.message);status('No verified crossing: '+e.message);}
+});
+$('approve-reconcile').addEventListener('change',()=>{$('reconcile').disabled=!recovery||recovery.status!=='accepted-needs-explicit-reconcile'||!$('approve-reconcile').checked;});
+$('reconcile').addEventListener('click',async()=>{
+ if(!recovery||!$('approve-reconcile').checked||busy)return;
+ const r=recovery;clearRecovery();busy=true;
+ try{const finished=await request('/api/room/rejoin/reconcile',{crossing_id:r.crossing_id,effect_sha256:r.effect_sha256,approval:'I approve reconciliation of this exact durable intent'});
+ print('recovery',finished);status('Reconciled existing crossing without creating a second effect.');
+ }catch(e){status('Reconciliation not confirmed: '+e.message+'. Re-inspect before another action.');}
+ finally{busy=false;}
+});
+</script>
+</body></html>
