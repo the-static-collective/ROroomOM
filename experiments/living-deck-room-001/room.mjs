@@ -72,10 +72,55 @@ function parseInput(value) {
  },title:room.object.name,brief:room.brief,quest:fm.needs[0].title,
  proposedProject:fm.title,priorLocalActions:[...value.localPreviewActions]};
 }
+// Replay only local quest actions. A typed claimed receipt is not a verified occurrence.
+function validateLocalQuestTrace(receipt, source) {
+ if(!plain(receipt)||receipt.format!=="full-measure.living-deck-local-quest-receipt"||
+  receipt.version!==1||receipt.sourceCompositionId!==source.compositionId||
+  receipt.sourceDesignCommit!==source.designCommit||
+  receipt.sourceVerification!=="unverified"||receipt.projectId!==null||
+  receipt.pledgeConfirmationRef!==null||receipt.authority!=="none"||
+  receipt.localDisposition!=="held"||receipt.sharedWorldChanged!==false||
+  receipt.externalPublication!==false||!Array.isArray(receipt.localActions)||
+  receipt.localActions.length>60||
+  receipt.receiptRef!==`fm-local-preview:${source.compositionId}:${receipt.localActions.length}`)
+    return fail("quest-overclaim","Full Measure receipt is not a bounded unconfirmed local preview.");
+ let phase="offered";
+ for(const action of receipt.localActions){
+  if(!["INSPECT","JOIN","ATTEMPT","REPORT","HOLD","RETURN","REFUSE"].includes(action)||
+   phase==="refused"||
+   phase==="held"&&!["RETURN","REFUSE"].includes(action)||
+   action==="INSPECT"&&phase!=="offered"||
+   action==="JOIN"&&phase!=="inspected"||
+   action==="ATTEMPT"&&phase!=="joined"||
+   action==="REPORT"&&phase!=="attempted"||
+   action==="RETURN"&&phase!=="held"||
+   action==="HOLD"&&phase==="held")
+    return fail("quest-trace-invalid","Full Measure claimed local history cannot be replayed.");
+  phase={INSPECT:"inspected",JOIN:"joined",ATTEMPT:"attempted",REPORT:"reported-unconfirmed",
+   HOLD:"held",RETURN:"offered",REFUSE:"refused"}[action];
+ }
+ if(phase!==receipt.phase)return fail("quest-phase-mismatch","Claimed quest phase does not follow its local history.");
+ return {ok:true,phase,localActions:[...receipt.localActions],
+  receiptRef:receipt.receiptRef,sourceVerified:false,pledgeConfirmed:false};
+}
 export function openLocalRoom(input) {
+ let questReceipt=null;
+ if(typeof input==="string"){
+   if(input.length>65536)return fail("too-large","The handoff exceeds 64 KiB.");
+   try{input=JSON.parse(input)}catch{return fail("invalid-json","The handoff is not valid JSON.");}
+ }
+ if(plain(input)&&input.format==="full-measure.living-deck-room-request"){
+   if(input.version!==1||input.grant!=="preview-only"||
+      input.requiresRoomIndependentValidation!==true||!plain(input.questPreviewReceipt))
+     return fail("invalid-room-request","Full Measure request cannot claim destination admission.");
+   questReceipt=input.questPreviewReceipt;
+   input=input.sourceProposal;
+ }
  const parsed=parseInput(input);
- if (!parsed.ok) return parsed;
- return {ok:true, status:"preview-only",...parsed,phase:"arrived",history:[],
+ if(!parsed.ok) return parsed;
+ const fullMeasurePreview=questReceipt?validateLocalQuestTrace(questReceipt,parsed.source):null;
+ if(fullMeasurePreview&&!fullMeasurePreview.ok)return fullMeasurePreview;
+ return {ok:true, status:"preview-only",...parsed,fullMeasurePreview,phase:"arrived",history:[],
   destinationDisposition:"held",admissionReason:"requires-project-owned-verification-and-explicit-authorization",
   sharedWorldChanged:false};
 }
@@ -97,6 +142,7 @@ export function exportLocalRoom(room) {
  if (!room?.ok || room.status !== "preview-only") return fail("room-not-open","Nothing to export.");
  return {format:"roroomom.living-deck-local-preview",version:1,source:room.source,
   title:room.title,brief:room.brief,quest:room.quest,history:[...room.history],
+  fullMeasurePreview:room.fullMeasurePreview?{...room.fullMeasurePreview,localActions:[...room.fullMeasurePreview.localActions]}:null,
   sourceVerification:"unverified",destinationDisposition:"held",
   sharedWorldChanged:false,externalPublication:false,authority:"none"};
 }
