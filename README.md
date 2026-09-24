@@ -43,3 +43,7 @@ The six contract tests exercise bounded effectful export, read-only Workbench se
 `static-room.html` is the complete standalone Room; `app.js`, `live-bridge.js`, and `room005.js` are inspectable component source, reassembled by `compose005.py`. `bridge_core.py` and `room004_server.py` preserve Room 004's read-only source bridge; `capability_core.py` and `bridge_server.py` admit the two new operations with independent local receipts. `source-manifest.json` holds prior historical project source coordinates. `test_capability005.py` is the executable contract/UX witness.
 
 **Design law:** available ≠ authorized; prepared ≠ executed; accepted ≠ completed; a Room receipt ≠ a source project's receipt. A room can hold the instruments without claiming to be their owner.
+
+## ROOM-006 — opt-in effectful rejoining experiment
+
+The separate experimental [Rejoining Room browser setup](experiments/rejoining_room_006/BROWSER-SETUP.md) runs at `/rejoin` through `experiments/rejoining_room_006/bridge006.py`, only when independently pinned WORLDSEED-004 sources and the exact audited code package are supplied by the local operator. The existing Room-005 bridge and offline page are unchanged. Imported joint history never grants execution authority; the new effect is one Room-owned create-only artifact with an explicit preview, single-use local confirmation, and durable restart reconciliation. This remains a local demonstration, **not** authenticated two-person consent or project-native execution.
