@@ -1,0 +1,59 @@
+{
+  "kind": "lemon-press.living-artifact.receipt",
+  "version": 3,
+  "edition": "001-slice-003",
+  "exportedAt": "2026-09-24T00:00:00.000Z",
+  "objectIds": [
+    "lp:book/001",
+    "lp:cup/blue",
+    "lp:photograph/blue-hour"
+  ],
+  "events": [
+    {
+      "id": "ev:73469363-b963-40ea-b9e7-3620617de2a1",
+      "at": "2026-09-24T21:17:21.101Z",
+      "type": "DISCOVER_DOOR",
+      "target": "lp:book/001"
+    },
+    {
+      "id": "ev:2a09780d-85d5-4262-bd3c-f043eff33b65",
+      "at": "2026-09-24T21:17:21.102Z",
+      "type": "ENTER_ROOM",
+      "target": "lp:book/001"
+    },
+    {
+      "objectId": "lp:book/001",
+      "quality": "echoes",
+      "id": "ev:a0f87ddf-846e-4ae3-9487-9b662e9b8e8d",
+      "at": "2026-09-24T21:17:21.102Z",
+      "type": "MARK_QUALITY",
+      "target": "lp:book/001"
+    },
+    {
+      "objectId": "lp:cup/blue",
+      "quality": "echoes",
+      "id": "ev:ab0ac380-43f0-419e-91d8-bdabc769738a",
+      "at": "2026-09-24T21:17:21.102Z",
+      "type": "MARK_QUALITY",
+      "target": "lp:cup/blue"
+    },
+    {
+      "a": "lp:book/001",
+      "b": "lp:cup/blue",
+      "quality": "echoes",
+      "title": "A cup hears a book",
+      "description": "The blue cup catches a syllable from the book.",
+      "id": "ev:9e59b173-e657-41c4-bab8-7eb8907c8987",
+      "at": "2026-09-24T21:17:21.102Z",
+      "type": "INVENT_RELATION",
+      "target": "lp:book/001"
+    },
+    {
+      "relationId": "rel:invented:ev:9e59b173-e657-41c4-bab8-7eb8907c8987",
+      "id": "ev:e2296a7c-4679-42e1-88da-9a7ae763e3a0",
+      "at": "2026-09-24T21:17:21.103Z",
+      "type": "PLAY_INVENTION",
+      "target": "lp:book/001"
+    }
+  ]
+}
