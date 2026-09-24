@@ -1,0 +1,116 @@
+{
+  "format": "static-room-frozen-source-manifest",
+  "version": 1,
+  "checkedAt": "2026-09-24",
+  "limitation": "Frozen bounded excerpts fetched during Room 003 preparation, not live synchronization. Descriptor existence does not confer execution authority.",
+  "sources": [
+    {
+      "id": "source-workbench",
+      "name": "Static Workbench · README witness",
+      "kind": "Project source",
+      "glyph": "⌘",
+      "address": "static://source/static-workbench/readme",
+      "summary": "Frozen excerpt from the Workbench README: local browser desk, bounded source handoff, descriptor-only future adapters. Not a live project connection.",
+      "source": "Bundled pinned source excerpt · GitHub read in preparation of Room 003",
+      "relations": [
+        {
+          "to": "song",
+          "type": "could support creative handoff",
+          "status": "proposed",
+          "why": "Project README describes source-handoff capability; relationship to demo song is an experiment, not documented project canon."
+        }
+      ],
+      "proof": {
+        "repository": "the-static-collective/static-workbench",
+        "commit": "38d8840c053d3675818ac3b8b74ab56731434bd7",
+        "path": "README.md",
+        "blobSha": "36dfae809b883cd32219d85171f01c8610acceeb",
+        "checkedAt": "2026-09-24",
+        "lineStart": 1,
+        "url": "https://github.com/the-static-collective/static-workbench/blob/38d8840c053d3675818ac3b8b74ab56731434bd7/README.md",
+        "excerpt": "# Static Workbench\n\nA local-first browser workbench for a dedicated Static Collective Linux machine.\n\n**v0.2 remains intentionally read-only against project state.** It exposes the host, configured filesystem roots, Git repository state, a durable Workbench witness journal, and a deterministic HumanTerminal/APERTURE specimen that writes only Workbench-owned local semantic receipts. It does **not** yet execute or mutate Toaster, Dogram, ALEX, 3rdi, LOADOUT, or Static Live.\n\nThe browser is the desk. The supervisor is the local process boundary. Project-native identities and receipts remain owned by their projects."
+      }
+    },
+    {
+      "id": "source-fogglass",
+      "name": "FogGlass · README witness",
+      "kind": "Project source",
+      "glyph": "◌",
+      "address": "static://source/fogglass/readme",
+      "summary": "Frozen source excerpt from FogGlass defining fog addresses, lamps, lenses, receipts, and the distinction between observation and verdict.",
+      "source": "Bundled pinned source excerpt · GitHub read in preparation of Room 003",
+      "relations": [
+        {
+          "to": "orchard",
+          "type": "could expose unresolved world connections",
+          "status": "proposed",
+          "why": "Experimental application of FogGlass ideas to demo world; not a project-owned integration."
+        }
+      ],
+      "proof": {
+        "repository": "the-static-collective/fogGlass",
+        "commit": "bff0ff0910061af12919a2778f72c85ff721c67d",
+        "path": "README.md",
+        "blobSha": "bc9690c9e0562bdd65bf07e36fe6fc42d8db28a0",
+        "checkedAt": "2026-09-24",
+        "lineStart": 1,
+        "url": "https://github.com/the-static-collective/fogGlass/blob/bff0ff0910061af12919a2778f72c85ff721c67d/README.md",
+        "excerpt": "# FOG-GLASSES-001\n\nA tiny, local, browser-executable instrument for inspecting uncertainty without collapsing it into a verdict.\n\n## Core law\n\n> The glasses may change what you can distinguish. They may not change the world to make it easier to see.\n\n## What it preserves\n\n- Fog is not a topological wall. A route may still exist while visibility degrades locally.\n- Fog has an address.\n- Fog has composition, grain, depth, motion, persistence, response, and unresolved origin."
+      }
+    },
+    {
+      "id": "source-fullmeasure",
+      "name": "Full Measure · World Layer witness",
+      "kind": "Project source",
+      "glyph": "✿",
+      "address": "static://source/full-measure/readme",
+      "summary": "Frozen README excerpt from the project-owned world layer, describing human-confirmed participation, witnessed steps, and model proposal boundaries.",
+      "source": "Bundled pinned source excerpt · GitHub read in preparation of Room 003",
+      "relations": [
+        {
+          "to": "grace",
+          "type": "might inform an experience",
+          "status": "fogged",
+          "why": "The project describes an executable world layer; specific Grace-game integration is not established by this excerpt."
+        }
+      ],
+      "proof": {
+        "repository": "the-static-collective/full-measure-world-layer",
+        "commit": "412081481d763b4adcc02f3a8b8eef02070fb000",
+        "path": "README.md",
+        "blobSha": "cdb1128473f403fa2638d819753f66f66806a04d",
+        "checkedAt": "2026-09-24",
+        "lineStart": 1,
+        "url": "https://github.com/the-static-collective/full-measure-world-layer/blob/412081481d763b4adcc02f3a8b8eef02070fb000/README.md",
+        "excerpt": "# Full Measure — World Layer\n\nFull Measure is the D&D-style life layer for real participation: a world people can inhabit, play through, and help shape without turning human worth into points.\n\nThe original Garden vertical still places evidence-derived participation over Jubilee Campfire's causal loop:\n\n```text\nTension → Pledge → Accept → Report → Human Witness → Harvest → Capacity\n```\n\nThe repository now also contains the executable **Boot the House v0.1** world-encounter loop, the **Human Terminal v0.1** basic-human operator membrane, and **STRIDE Specimen 001** for two separately confirmed local steps. These surfaces compose around the same authority boundary rather than creating parallel constitutions."
+      }
+    },
+    {
+      "id": "source-staticos",
+      "name": "STATIC OS · Genesis witness",
+      "kind": "Project source",
+      "glyph": "▧",
+      "address": "static://source/static-os/readme",
+      "summary": "Frozen source excerpt identifying the STATIC OS bootstrap and separating image construction from actual boot proof.",
+      "source": "Bundled pinned source excerpt · GitHub read in preparation of Room 003",
+      "relations": [
+        {
+          "to": "source-workbench",
+          "type": "proposes a future host for",
+          "status": "proposed",
+          "why": "Architecture exploration; Room does not claim an installed or booted OS."
+        }
+      ],
+      "proof": {
+        "repository": "the-static-collective/static-os",
+        "commit": "8bdb6ec5c258c1c98a777d3a83537569f4977a54",
+        "path": "README.md",
+        "blobSha": "f9764ae41680a30ab070057806cb0d9af3c4e51b",
+        "checkedAt": "2026-09-24",
+        "lineStart": 1,
+        "url": "https://github.com/the-static-collective/static-os/blob/8bdb6ec5c258c1c98a777d3a83537569f4977a54/README.md",
+        "excerpt": "# STATIC OS\n\nA project-owned, Linux-based computational habitat for the Static Collective.\n\n**Status:** GENESIS 001 / bootstrap under review. This repository does not yet contain a verified bootable ISO or installed OS.\n\nThe distribution integrates independently governed organs without absorbing their identity or authority. Debian supplies the kernel, boot, packages, and hardware support; STATIC OS owns its image composition, HOUSE session entry, provenance manifest, test gates, and operator documentation."
+      }
+    }
+  ]
+}
