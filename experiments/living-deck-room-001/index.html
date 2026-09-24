@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROroomOM · Cicadas on the Porch</title>
+<style>
+:root{font:16px/1.5 system-ui,sans-serif;color:#f4e9d7;background:#151b1d}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#38453c,#151b1d 70%)}
+main{max-width:800px;margin:0 auto;padding:30px 18px 80px}
+h1{font:600 clamp(2.1rem,7vw,4.3rem)/1.05 Georgia,serif;margin:26px 0 10px}
+h2{font:600 1.5rem Georgia,serif}
+p{margin:10px 0 18px}.tag{font-size:.75rem;letter-spacing:.1em;border:1px solid #ddca8c;padding:6px 10px;border-radius:25px;color:#ecd9a0}
+.panel{background:#22302c;border:1px solid #698074;border-radius:16px;padding:22px;margin:20px 0}
+.illustration{border-radius:15px;min-height:175px;background:radial-gradient(circle at 78% 28%,#ddb27d 2%,transparent 32%),linear-gradient(160deg,#516f69,#38443d 60%,#24272b);display:flex;align-items:flex-end;padding:20px;margin:18px 0}
+.illustration b{font:600 1.9rem Georgia,serif;color:#fff5db}
+button{font:600 1rem system-ui;padding:11px 15px;border:1px solid #d4bb82;background:#e6c78e;color:#272921;border-radius:10px;cursor:pointer}
+button.secondary{background:#263c35;color:#ffedd2}
+button:focus-visible,input:focus-visible{outline:3px solid #fff;outline-offset:3px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.controls{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+input[type=file]{width:100%;max-width:100%;padding:12px;border:1px dashed #d7ba80;border-radius:10px}
+.muted{color:#c5c8b8}small{color:#ded4bb}
+#state{border-left:3px solid #e0c68d;padding:11px 17px;background:#182420}
+#log p{padding-left:12px;border-left:2px solid #a9bcaf}
+@media(max-width:550px){.panel{padding:16px}.controls button{width:100%}}
+</style></head><body><main>
+<span class="tag">ROroomOM / LIVING DECK 001 / LOCAL PREVIEW</span>
+<h1>Cicadas on the Porch</h1>
+<p class="muted">Bring a portable card-and-sticker proposal from the Static Field Fellowship Table. This guest room renders it as an inspectable, playable encounter without issuing cards or changing shared-world history.</p>
+<div class="illustration"><b>THE HOUSE TAKES ATTENDANCE.</b></div>
+<section class="panel" aria-labelledby="entry"><h2 id="entry">Open a card composition</h2>
+<p>In Static Field, compose two cards and a sticker, then download <strong>Export Full Measure × ROroomOM proposal</strong>. Choose that JSON file below. A standalone browser preview does not require the optional local ROroomOM bridge.</p>
+<input id="handoff" type="file" accept=".json,application/json" aria-label="Choose a Living Deck proposal JSON">
+<p id="status" role="status" aria-live="polite">No handoff loaded.</p>
+</section>
+<section class="panel" id="scene" hidden aria-labelledby="scene-title">
+<small id="source"></small><h2 id="scene-title"></h2>
+<p id="brief"></p><p id="quest"></p>
+<div id="state" role="status" aria-live="polite"></div>
+<div class="controls">
+<button class="secondary" data-act="INSPECT">Inspect</button>
+<button class="secondary" data-act="ATTEMPT">Attempt</button>
+<button class="secondary" data-act="LEAVE">Leave</button>
+<button class="secondary" data-act="RETURN">Return</button>
+</div>
+<div id="log" aria-live="polite"></div>
+<div class="controls"><button id="export" class="secondary">Export local room receipt</button></div>
+</section>
+<section class="panel"><h2>Admission boundary</h2><p class="muted">The source card and sticker are currently design-backed local fixtures. This standalone ROroomOM surface holds the proposal for exploration but cannot attest a printed card, accept it as world canon, create a Full Measure project, or invoke any project-owned effectful capability. Importing a file is never an approval for external execution. Local returns preserve prior preview actions.</p></section>
+</main>
+<script type="module">
+import {openLocalRoom,actLocalRoom,exportLocalRoom} from "./room.mjs";
+const $=id=>document.getElementById(id);
+let room=null;
+function draw(){
+ if(!room?.ok)return;
+ $("scene").hidden=false;
+ $("source").textContent=room.source.compositionId+" · source unverified · destination held";
+ $("scene-title").textContent=room.title;
+ $("brief").textContent=room.brief;
+ $("quest").textContent="Quest proposal: "+room.quest;
+ $("state").textContent=room.phase==="away"?
+  "You have left the porch. It remains available for a local return; no shared-world event was created.":
+  room.phase==="attempted"?
+  "You attempted the proposed relation. The sound of the porch changes for this local encounter, but the external world remains untouched.":
+  room.phase==="returned"?
+  "You returned to the porch. The earlier local actions remain in the encounter trace.":
+  room.phase==="inspected"?
+  "You can now attempt the relationship or leave it unresolved.":
+  "A cicada sings beside an unfinished porch radio. The next move is yours.";
+ $("log").replaceChildren();
+ room.history.forEach((action,i)=>{const p=document.createElement("p");p.textContent=`Local trace ${i+1}: ${action}`;$("log").append(p)});
+ for(const button of document.querySelectorAll("[data-act]")){
+   const action=button.dataset.act;
+   button.disabled=room.phase==="away"? action!=="RETURN" :
+     action==="RETURN" || action==="ATTEMPT"&&!room.history.includes("INSPECT");
+ }
+}
+$("handoff").addEventListener("change",async e=>{
+ const file=e.target.files?.[0]; e.target.value="";
+ if(!file)return;
+ if(file.size>65536 || file.size===0){$("status").textContent="Choose a nonempty JSON file no larger than 64 KiB.";return}
+ try{
+  const result=openLocalRoom(await file.text());
+  if(!result.ok){room=null;$("scene").hidden=true;$("status").textContent=`Handoff refused: ${result.explanation}`;return}
+  room=result;$("status").textContent="Proposal accepted for local preview only. No source proof or external admission was granted.";draw();
+ }catch{room=null;$("scene").hidden=true;$("status").textContent="Could not read the handoff."}
+});
+document.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",()=>{
+ const next=actLocalRoom(room,b.dataset.act);
+ if(!next.ok){$("status").textContent=next.explanation;return}
+ room=next;$("status").textContent=`Recorded local action: ${b.dataset.act}`;draw();
+}));
+$("export").addEventListener("click",()=>{
+ const out=exportLocalRoom(room);
+ if(out.ok===false)return;
+ const blob=new Blob([JSON.stringify(out,null,2)+"\n"],{type:"application/json"});
+ const url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download="roroomom-local-"+room.source.compositionId.replaceAll(":","-")+".json";a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("status").textContent="Local preview exported. No external source or destination was mutated.";
+});
+</script></body></html>
