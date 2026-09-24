@@ -31,3 +31,20 @@ The parent ROroomOM bridge already has separate prepare → explicit approval �
 ## Next real admission frontier
 
 To progress past preview, obtain one genuine source-issued PostEmahh'n card and sticker receipt from its independent implementation, implement a trusted import verifier, and add destination-owned admit/hold/refuse adapters to Full Measure and ROroomOM. Only a separate explicit world-policy decision could later emit a canonical Static Field event.
+
+
+## Three-repository carrier: card → local quest → local room
+
+The guest room now also accepts the `full-measure.living-deck-room-request` exported by [Full Measure experimental PR #48](https://github.com/the-static-collective/full-measure-world-layer/pull/48). The request carries the original Static Field proposal plus a separately generated **unconfirmed local quest receipt**. ROroomOM independently replays its declared quest actions and checks its phase, receipt reference, source composition, no-confirmation fields, and lack of external authority. An invalid or forged local quest history is refused. A valid history is carried forward as *preview residue*, never as a confirmed deed.
+
+One fully manual path is:
+
+```text
+Static Field Fellowship Table → Export Full Measure × ROroomOM proposal
+Full Measure Living Deck quest → Inspect / Join / Attempt / Report locally
+Full Measure → Carry quest to ROroomOM (JSON)
+ROroomOM local guest room → import JSON, Inspect / Attempt / Leave / Return
+ROroomOM → export local encounter receipt
+```
+
+All three are independently hosted localhost pages; no service-to-service network or production datastore write occurs. GitHub Actions checks out both producer branches and exercises the actual card → quest → room chain in one isolated Node contract test. External project admission still requires distinct reviewed adapters and genuine source-issued card/sticker proofs.
