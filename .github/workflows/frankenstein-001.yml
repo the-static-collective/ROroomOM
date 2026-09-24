@@ -1,0 +1,27 @@
+name: Frankenstein 001 experimental checks
+on:
+  push:
+    branches:
+      - experiment/frankenstein-lemon-loom-room-001
+    paths:
+      - 'experiments/frankenstein-001/**'
+      - '.github/workflows/frankenstein-001.yml'
+  pull_request:
+    paths:
+      - 'experiments/frankenstein-001/**'
+      - '.github/workflows/frankenstein-001.yml'
+permissions:
+  contents: read
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and regression checks
+        run: |
+          node --check experiments/frankenstein-001/core.js
+          node --check experiments/frankenstein-001/test.cjs
+          node experiments/frankenstein-001/test.cjs
