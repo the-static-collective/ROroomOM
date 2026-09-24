@@ -24,10 +24,10 @@ input[type=file]{width:100%;max-width:100%;padding:12px;border:1px dashed #d7ba8
 </style></head><body><main>
 <span class="tag">ROroomOM / LIVING DECK 001 / LOCAL PREVIEW</span>
 <h1>Cicadas on the Porch</h1>
-<p class="muted">Bring a portable card-and-sticker proposal from the Static Field Fellowship Table. This guest room renders it as an inspectable, playable encounter without issuing cards or changing shared-world history.</p>
+<p class="muted">Bring a portable card-and-sticker proposal from the Static Field Fellowship Table, or carry a local quest encounter from Full Measure. This guest room renders it as an inspectable, playable encounter without issuing cards or changing shared-world history.</p>
 <div class="illustration"><b>THE HOUSE TAKES ATTENDANCE.</b></div>
 <section class="panel" aria-labelledby="entry"><h2 id="entry">Open a card composition</h2>
-<p>In Static Field, compose two cards and a sticker, then download <strong>Export Full Measure × ROroomOM proposal</strong>. Choose that JSON file below. A standalone browser preview does not require the optional local ROroomOM bridge.</p>
+<p>In Static Field, compose two cards and a sticker, then download <strong>Export Full Measure × ROroomOM proposal</strong>. Open that JSON directly here, or play it as a local quest in Full Measure and choose its <strong>Carry quest to ROroomOM</strong> export here instead. A standalone browser preview does not require the optional local ROroomOM bridge.</p>
 <input id="handoff" type="file" accept=".json,application/json" aria-label="Choose a Living Deck proposal JSON">
 <p id="status" role="status" aria-live="polite">No handoff loaded.</p>
 </section>
@@ -53,7 +53,7 @@ let room=null;
 function draw(){
  if(!room?.ok)return;
  $("scene").hidden=false;
- $("source").textContent=room.source.compositionId+" · source unverified · destination held";
+ $("source").textContent=room.source.compositionId+" · source unverified · destination held"+(room.fullMeasurePreview?" · Full Measure quest: "+room.fullMeasurePreview.phase:"");
  $("scene-title").textContent=room.title;
  $("brief").textContent=room.brief;
  $("quest").textContent="Quest proposal: "+room.quest;
