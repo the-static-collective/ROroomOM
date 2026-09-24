@@ -42,7 +42,7 @@ const test=async(name,fn)=>{await fn();passes++;console.log('PASS '+name)};
    const forged=JSON.parse(JSON.stringify(door));forged.witness.eventId='ev:forged';
    await assert.rejects(F.acceptDoor(forged,F.freshState(),true,'guest-3'),/Witness/);
  });
- await test('real ROroomOM 008 schema accepts exported guest score',async()=>{
+ await test(process.argv[2]?'real ROroomOM 008 schema accepts exported guest score':'exports ROroomOM 008 score contract for downstream import',async()=>{
    const score=F.toRoomScore(accepted.guest);
    assert.equal(score.format,'roroomom-experience-score');
    assert.deepEqual(score.assets,{});
