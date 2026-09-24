@@ -69,6 +69,11 @@ class RejoinController:
             raise Refusal("pin configuration has missing or unexpected fields")
         if not Path(cfg["home"]).is_absolute():
             raise Refusal("seed home must be a configured absolute local path")
+        seed_home = Path(cfg["home"]).expanduser().resolve()
+        if self.pins_file == seed_home or seed_home in self.pins_file.parents:
+            raise Refusal("independent pin file must live outside the imported seed home")
+        if self.pins_file == self.state_dir or self.state_dir in self.pins_file.parents:
+            raise Refusal("independent pin file must live outside the Room effect state")
         for key in ("root_seal", "a_seal", "b_seal", "joint_seal"):
             seal = cfg[key]
             if not isinstance(seal, str) or len(seal) != 64 or any(c not in "0123456789abcdef" for c in seal):
