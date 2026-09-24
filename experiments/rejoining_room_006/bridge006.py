@@ -114,7 +114,17 @@ class RejoinController:
                 raise Refusal("invalid crossing address")
             room = RejoiningRoom(self.state_dir, self.anchor)
             try:
-                return room.inspect(crossing_id)
+                result = room.inspect(crossing_id)
+                if result["status"] == "accepted-needs-explicit-reconcile":
+                    row = room.db.execute(
+                        "SELECT effect,effect_sha FROM crossings WHERE id=?",
+                        (crossing_id,),
+                    ).fetchone()
+                    if row is None:
+                        raise Refusal("no durable effect available for reconciliation")
+                    return {**result, "effect_sha256": row[1],
+                            "exact_pending_effect": row[0].decode("utf-8")}
+                return result
             finally:
                 room.close()
 
