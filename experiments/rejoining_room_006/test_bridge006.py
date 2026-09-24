@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -180,6 +182,63 @@ class BridgeBats(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(Refusal):
                 require_pinned_worldseed_library(Path(folder))
+
+    def test_16_http_inspection_and_explicit_reconcile_after_real_child_death(self):
+        from engine import digest
+        content = "Crash before artifact publication: continue only after review."
+        p = self.prep(content)
+        cid = "roomx_" + digest({"candidate_id": p["candidate_id"],
+                                   "local_actor": "local-room-operator"})
+        code = '''import json,sys
+from pathlib import Path
+from engine import RejoiningRoom,JointAnchor
+anchor = JointAnchor(**json.loads(sys.argv[2]))
+room = RejoiningRoom(Path(sys.argv[1]),anchor)
+preview = room.prepare(sys.argv[3])
+room.commit(preview,approved_candidate_id=preview["candidate_id"],
+            local_actor="local-room-operator", crash_at="after_intent")
+'''
+        child = subprocess.run(
+            [sys.executable, "-c", code, str(self.controller.state_dir),
+             json.dumps(ANCHOR.__dict__), content],
+            cwd=Path(__file__).parent, capture_output=True, timeout=8)
+        self.assertEqual(child.returncode, 71, child.stderr.decode())
+        inspection = self.req("/api/room/rejoin/receipt?"+urlencode({"id": cid}))
+        self.assertEqual(inspection["status"], "accepted-needs-explicit-reconcile")
+        self.assertEqual(len(inspection["effect_sha256"]), 64)
+        self.assertIn(content, inspection["exact_pending_effect"])
+        self.assertHTTP(403, lambda: self.req("/api/room/rejoin/reconcile",
+                        {"crossing_id": cid, "effect_sha256": inspection["effect_sha256"],
+                         "approval": "a projection approves"}))
+        completed = self.req("/api/room/rejoin/reconcile",
+                        {"crossing_id": cid, "effect_sha256": inspection["effect_sha256"],
+                         "approval": "I approve reconciliation of this exact durable intent"})
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(self.req("/api/room/rejoin/receipt?"+urlencode({"id": cid}))
+                         ["receipt"]["descendant_id"], completed["receipt"]["descendant_id"])
+        self.assertEqual(len(list(self.controller.state_dir.rglob(cid+".md"))), 1)
+
+    def test_17_wrong_effect_digest_cannot_reconcile_pending_intent(self):
+        from engine import digest
+        content = "Pending with wrong digest."
+        p = self.prep(content)
+        cid = "roomx_" + digest({"candidate_id": p["candidate_id"],
+                                   "local_actor": "local-room-operator"})
+        # Model the durable intent boundary without publishing a file.
+        from engine import RejoiningRoom
+        from hashlib import sha256
+        room = RejoiningRoom(self.controller.state_dir, ANCHOR)
+        candidate = room.prepare(content)
+        effect = ("# Rejoining Room consequence\n\n" + content + "\n\n---\n"
+                  + "Both parent histories remain separate.\nPreserved tension: "
+                  + ANCHOR.tension + "\n").encode()
+        room.db.execute("INSERT INTO crossings VALUES (?,?,?,?,?,NULL)",
+                        (cid, ANCHOR.joint_pin, effect, sha256(effect).hexdigest(), "accepted"))
+        room.close()
+        self.assertHTTP(409, lambda: self.req("/api/room/rejoin/reconcile",
+                        {"crossing_id": cid, "effect_sha256": "0"*64,
+                         "approval": "I approve reconciliation of this exact durable intent"}))
+        self.assertFalse(list(self.controller.state_dir.rglob(cid+".md")))
 
     def test_16_conflicting_real_joint_at_same_room_location_refuses(self):
         p = self.prep("rejoin unique")
