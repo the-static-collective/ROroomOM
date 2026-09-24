@@ -28,6 +28,31 @@ from worldseed004_adapter import load_verified_anchor
 _REQUIRED = {"home", "root_seal", "a_seal", "b_seal", "joint_seal", "root_state_id"}
 
 
+# Frozen against the exact portable WORLDSEED-004 BAT sources used for this slice.
+# This checks code bytes, not publisher identity; only install a trusted package.
+EXPECTED_WORLDSEED_SHA256 = {
+    "worldseed_003.py": "662700890d54a3f5e8f954e6cf43f36a38cbbbed93d2ecab35d804f653271b7b",
+    "worldseed_rejoin_004.py": "b2f251fee7a958789fd2bea14d9460c74a411889758fd0a89c6c7d11a606a7eb",
+    "relational_004.py": "cb495ed86e1b9fae20f3cbdab5d16bd86fb3f7dd00beb3f85e7f8df27bd80d21",
+    "holographic_kernel_001.py": "68ea573eb8c0421c702deb9d8f1fcfd4dee8afb3064a680b048f368488d62f05",
+    "holographic_field_001.py": "2ad6c14fa6002cf786d8039b94b778a90ef5129b4e8443f2c9f20e4271f6d0ab",
+    "holographic_extinction_002.py": "f7fdf33087458a2f3b3ccff6ce0c3601f8ede22432979a20052d29d0cba5747d",
+}
+
+
+def require_pinned_worldseed_library(root: Path) -> Path:
+    from hashlib import sha256
+    root = Path(root).expanduser().resolve(strict=True)
+    parent = root / "static_workbench" / "experimental"
+    if not parent.is_dir():
+        raise Refusal("WORLDSEED-004 source package not found in configured library")
+    for filename, expected in EXPECTED_WORLDSEED_SHA256.items():
+        path = parent / filename
+        if path.is_symlink() or not path.is_file() or sha256(path.read_bytes()).hexdigest() != expected:
+            raise Refusal(f"WORLDSEED-004 code pin mismatch: {filename}")
+    return root
+
+
 class RejoinController:
     def __init__(self, state_dir: Path, pins_file: Path):
         self.state_dir = Path(state_dir).expanduser().resolve() / "rejoining_room_006"
@@ -229,7 +254,7 @@ def main():
     args = p.parse_args()
     if not (1 <= args.port <= 65535) or args.port == args.workbench_port:
         p.error("distinct valid Room and Workbench ports required")
-    sys.path.insert(0, str(args.worldseed_lib.expanduser().resolve()))
+    sys.path.insert(0, str(require_pinned_worldseed_library(args.worldseed_lib)))
     controller = RejoinController(args.state_dir, args.pins_file)
     from http.server import ThreadingHTTPServer
     adapter = WorkbenchReadAdapter(args.workbench_port)
