@@ -103,7 +103,7 @@ test('calendar recurrence exposes eligibility but creates no occurrence until so
   const e2028 = f.eligibility('static-day', 2028);
   assert.equal(e2028.eligible, true);
   // Intentionally no arrive() call in 2028.
-  assert.equal(f.occupants('calendar:2028-09-24').occupants.length, 0, 'a missed year stays empty');
+  assert.equal(f.hasCoordinate('calendar:2028-09-24'), false, 'a missed year must not manufacture a dated occurrence-address');
 
   const e2029 = f.eligibility('static-day', 2029);
   f.arrive({ eligibility: e2029, occurrenceId: 'static-day-2029', localWitness: w('2029 participants'), payload: { activity: 'returned' } });
