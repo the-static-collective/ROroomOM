@@ -1,0 +1,27 @@
+name: ADDRESSABLE-PARTICULAR-001 hostile checks
+on:
+  push:
+    branches:
+      - experiment/addressable-particular-001
+    paths:
+      - 'experiments/addressable-particular-001/**'
+      - '.github/workflows/addressable-particular-001.yml'
+  pull_request:
+    paths:
+      - 'experiments/addressable-particular-001/**'
+      - '.github/workflows/addressable-particular-001.yml'
+permissions:
+  contents: read
+jobs:
+  hostile-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and hostile inference tests
+        run: |
+          node --check experiments/addressable-particular-001/kernel.js
+          node --check experiments/addressable-particular-001/test.cjs
+          node experiments/addressable-particular-001/test.cjs
