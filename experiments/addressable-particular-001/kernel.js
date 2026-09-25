@@ -43,6 +43,10 @@ class AddressableField {
     return clone(value);
   }
 
+  hasCoordinate(id) {
+    return this.coordinates.has(id);
+  }
+
   addParticular({
     id,
     kind,
