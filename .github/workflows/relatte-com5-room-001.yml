@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 002 organ + round-trip contract
+name: reLATTE COM5 Room 003 verified media contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-002-organ-adapters
+      - experiment/relatte-com5-room-003-audio-resolver
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -27,16 +27,18 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run local receiver contract
+      - name: Run local Room contract
         run: |
           node --check experiments/relatte-com5-room-001/room.mjs
           node --check experiments/relatte-com5-room-001/test.mjs
           node --test experiments/relatte-com5-room-001/test.mjs
 
-      - name: Run Workbench organ wrapper contract
+      - name: Run local organ wrapper contracts
         run: |
           python3 -m unittest experiments/relatte-com5-room-001/test_workbench_organ.py -v
+          python3 -m unittest experiments/relatte-com5-room-001/test_vault_media_organ.py -v
           python3 -m py_compile experiments/relatte-com5-room-001/workbench_organ.py
+          python3 -m py_compile experiments/relatte-com5-room-001/vault_media_organ.py
           python3 -m py_compile experiments/relatte-com5-room-001/organ_bridge.py
 
       - name: Checkout reLATTE round-trip branch
@@ -57,7 +59,7 @@ jobs:
         run: |
           node -e "const fs=require('fs');const b=JSON.parse(fs.readFileSync('enterable-bundle.json','utf8'));fs.writeFileSync('enterable-song.json',JSON.stringify(b.packet,null,2)+'\n')"
 
-      - name: Cross-repo producer consumer contract
+      - name: Cross-repo reLATTE to Room contract
         run: |
           node experiments/relatte-com5-room-001/cross-repo-test.mjs enterable-song.json
 
@@ -73,3 +75,86 @@ jobs:
       - name: Verify fresh destination projection
         run: |
           node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('destination.json','utf8'));if(d.subject!=='particular:listener'||d.authority!=='none')process.exit(1);console.log('Full reLATTE → Room → reLATTE round trip passed.')"
+
+      - name: Checkout Autodiscography Vault resolver branch
+        uses: actions/checkout@v4
+        with:
+          repository: the-static-collective/autodiscography-vault
+          ref: feat/readonly-media-resolver
+          path: _vault
+
+      - name: Verify Vault resolver branch
+        working-directory: _vault
+        run: |
+          npm install
+          npm test
+
+      - name: Admit synthetic WAV into temporary Vault
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const bytes=Buffer.concat([
+            Buffer.from('RIFF','ascii'),
+            Buffer.alloc(4),
+            Buffer.from('WAVE','ascii'),
+            Buffer.from('room-003-playable-audio')
+          ]);
+          fs.writeFileSync('/tmp/room003-stage.wav',bytes);
+          NODE
+          node _vault/scripts/admit-staged-asset.js \
+            --staged-file /tmp/room003-stage.wav \
+            --vault-root /tmp/room003-vault \
+            --run-id room003-media \
+            --provider-track-id room003-track \
+            --asset-role audio_wav \
+            --observed-at 2026-10-01T19:50:00.000Z > vault-admit.json
+          node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('vault-admit.json','utf8'));fs.writeFileSync('vault-address.txt','sha256:'+r.receipt.sha256+'\n')"
+
+      - name: Start read-only Vault resolver
+        working-directory: _vault
+        run: |
+          npm run --silent resolver:serve -- \
+            --vault-root /tmp/room003-vault \
+            --port 13703 \
+            --room-origin http://127.0.0.1:13702 > /tmp/room003-vault-resolver.log 2>&1 &
+          echo $! > /tmp/room003-vault-resolver.pid
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:13703/v0/status >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/room003-vault-resolver.log
+          exit 1
+
+      - name: Verify browser-safe byte-range playback
+        run: |
+          digest="$(sed 's/^sha256://' vault-address.txt | tr -d '\n')"
+          curl -fsS \
+            -D /tmp/room003-headers.txt \
+            -H 'Origin: http://127.0.0.1:13702' \
+            -H 'Range: bytes=0-11' \
+            "http://127.0.0.1:13703/v0/media/$digest" \
+            -o /tmp/room003-first12.bin
+          grep -qi '^HTTP/.* 206' /tmp/room003-headers.txt
+          grep -qi '^Access-Control-Allow-Origin: http://127.0.0.1:13702' /tmp/room003-headers.txt
+          node -e "const fs=require('fs');const b=fs.readFileSync('/tmp/room003-first12.bin');if(b.toString('ascii',0,4)!=='RIFF'||b.toString('ascii',8,12)!=='WAVE')process.exit(1);"
+
+      - name: Resolve exact address through ROroomOM Vault organ
+        run: |
+          python3 experiments/relatte-com5-room-001/integration_vault_media.py \
+            "$(tr -d '\n' < vault-address.txt)" \
+            vault-descriptor.json
+
+      - name: Upgrade audio Lego to verified playback
+        run: |
+          node experiments/relatte-com5-room-001/media-resolution-contract.mjs \
+            "$(tr -d '\n' < vault-address.txt)" \
+            vault-descriptor.json
+
+      - name: Stop temporary Vault resolver
+        if: always()
+        run: |
+          if [ -f /tmp/room003-vault-resolver.pid ]; then
+            kill "$(cat /tmp/room003-vault-resolver.pid)" 2>/dev/null || true
+          fi
