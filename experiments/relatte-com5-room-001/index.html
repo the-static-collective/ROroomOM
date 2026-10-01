@@ -31,6 +31,11 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
 .row{display:flex;gap:.4rem;flex-wrap:wrap}
 .row button{flex:1}
 .resolved{border-style:double}
+.crossing-rail{border:2px solid #aaa;padding:1rem}
+.crossing-stage{border-left:3px solid #888;padding:.65rem;margin:.55rem 0}
+.crossing-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem}
+.crossing-actions button{width:100%}
+.crossing-card{white-space:pre-wrap;border:1px dashed #777;padding:.8rem;margin-top:.6rem;overflow-wrap:anywhere}
 @media(max-width:850px){.shell{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid #555}.doors{grid-template-columns:1fr}}
 </style>
 </head>
@@ -101,6 +106,31 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
     <p class="fog">Memory may produce invitations. It never auto-reopens, auto-mutates, changes a source, or becomes programming authority.</p>
   </div>
 
+  <div class="panel crossing-rail">
+    <strong>HUMAN ↔ AI CROSSING RAIL</strong>
+    <div id="crossingStatus" class="fog">Compile a Room Score before staging an AI proposal.</div>
+    <div class="crossing-stage">
+      <strong>AI PARTICIPANT → PROPOSAL</strong>
+      <input id="aiParticipant" value="ai:room-score-assistant" aria-label="AI participant id">
+      <input id="aiProvider" value="local-specimen" aria-label="AI provider or adapter">
+      <textarea id="aiRationale" aria-label="AI proposal rationale">Use the visible Play Memory as context, but change only one local timing value. Do not alter any source, media bytes, lyric cues, or history.</textarea>
+      <select id="aiTrack" aria-label="Room Score media track" disabled><option value="">Choose media track</option></select>
+      <input id="aiOffset" type="number" min="0" max="600000" step="1" value="500" aria-label="Proposed media offset milliseconds">
+      <button id="aiStage" disabled>Stage AI proposal</button>
+    </div>
+    <div id="crossingCard" class="crossing-card fog">(no AI proposal staged)</div>
+    <div class="crossing-stage">
+      <strong>HUMAN → DECISION</strong>
+      <div class="crossing-actions">
+        <button id="aiAccept" disabled>ACCEPT</button>
+        <button id="aiHold" disabled>HOLD</button>
+        <button id="aiRefuse" disabled>REFUSE</button>
+      </div>
+    </div>
+    <div id="crossingReceipt" class="log fog">(no human↔AI crossing receipt yet)</div>
+    <p class="fog">AI PARTICIPANT ≠ SYSTEM · PROPOSAL ≠ CONSENT · MEMORY INFLUENCE ≠ PERMISSION</p>
+  </div>
+
   <div class="panel">
     <strong>LOCAL ORGAN DOCK · AUTODISCOGRAPHY VAULT</strong>
     <div id="vaultStatus" class="fog">Vault audio resolver not checked.</div>
@@ -148,6 +178,7 @@ import {
   actEncounter,
   actRoomScore,
   compileRoomScore,
+  createAiRoomScoreProposal,
   createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
@@ -155,6 +186,7 @@ import {
   openNavigator,
   prepareMediaResolution,
   projectPerformanceMemory,
+  resolveHumanAiCrossing,
   roomScoreFrame,
   useInstrument
 } from './room.mjs';
@@ -165,11 +197,14 @@ let organTicket=null;
 let vaultConnected=false;
 let blenderConnected=false;
 let scoreAnimation=null;
+let activeAiProposal=null;
+let activeAiProposalState='EMPTY';
 
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
 const scoreStatus=q('#scoreStatus'), scoreSpec=q('#scoreSpec'), scoreWindow=q('#scoreWindow');
 const memoryStatus=q('#memoryStatus'), memoryOutput=q('#memoryOutput');
+const crossingStatus=q('#crossingStatus'), crossingCard=q('#crossingCard'), crossingReceipt=q('#crossingReceipt');
 const MEMORY_KEY='roroomom.performance-memory.v0';
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
@@ -313,6 +348,9 @@ function renderRoom(){
     q('#receipt').disabled=true;
     q('#navRequest').disabled=true;
     q('#memoryRemember').disabled=true;
+    activeAiProposal=null;
+    activeAiProposalState='EMPTY';
+    renderCrossingRail();
     void refreshMemoryViews();
     return;
   }
@@ -431,6 +469,7 @@ function renderRoom(){
 
   const wasConducted=room.localHistory.some(item=>item?.type==='ROOM_SCORE_CONDUCT');
   q('#memoryRemember').disabled=!room.roomScore || !wasConducted;
+  renderCrossingRail();
   void refreshMemoryViews();
 
   q('#leave').disabled=room.phase==='away';
@@ -444,7 +483,7 @@ function renderRoom(){
 q('#sample').onclick=async()=>{
   const response=await fetch('./fixture-enterable-song.json');
   navigatorState=openNavigator(await response.json());
-  room=null;renderNavigator();renderRoom();
+  room=null;renderNavigator();renderRoom();renderCrossingRail();
 };
 
 q('#file').onchange=async event=>{
@@ -534,6 +573,143 @@ q('#memoryRemember').onclick=async()=>{
 q('#memoryExport').onclick=()=>{
   saveJson('roroomom-performance-memory-ledger.json',loadMemoryLedger());
 };
+
+function scoreSpecFromRoom(){
+  if(!room?.roomScore)return null;
+  return {
+    schema:'roroomom.room-score/v0',
+    title:room.roomScore.title,
+    clock:room.roomScore.clock,
+    mediaTracks:room.roomScore.mediaTracks.map(track=>({
+      instrument:track.instrument,
+      offsetMs:track.offsetMs
+    })),
+    lyricTrack:{
+      instrument:room.roomScore.lyricTrack.instrument,
+      cues:room.roomScore.lyricTrack.cues.map(cue=>({...cue}))
+    }
+  };
+}
+
+function renderCrossingRail(){
+  const trackSelect=q('#aiTrack');
+  trackSelect.innerHTML='<option value="">Choose media track</option>';
+
+  if(room?.roomScore){
+    for(const track of room.roomScore.mediaTracks){
+      const option=document.createElement('option');
+      option.value=track.instrument;
+      option.textContent=track.kind+' · '+track.instrument+' · current '+track.offsetMs+' ms';
+      trackSelect.append(option);
+    }
+    if(room.roomScore.mediaTracks.some(track=>track.instrument==='lego:4:video-player')){
+      trackSelect.value='lego:4:video-player';
+    }
+  }
+
+  const canStage=Boolean(room?.roomScore);
+  q('#aiStage').disabled=!canStage;
+  trackSelect.disabled=!canStage;
+
+  if(!activeAiProposal){
+    crossingStatus.className='fog';
+    crossingStatus.textContent=canStage
+      ? 'Room Score ready. An AI participant may propose one bounded timing change; nothing will execute.'
+      : 'Compile a Room Score before staging an AI proposal.';
+    crossingCard.className='crossing-card fog';
+    crossingCard.textContent='(no AI proposal staged)';
+    q('#aiAccept').disabled=true;
+    q('#aiHold').disabled=true;
+    q('#aiRefuse').disabled=true;
+    return;
+  }
+
+  const p=activeAiProposal;
+  const influences=p.basis.memoryInvitations.map(item=>item.kind);
+  crossingStatus.className='good';
+  crossingStatus.textContent='Proposal '+activeAiProposalState+' · authority: '+p.authority;
+  crossingCard.className='crossing-card';
+  crossingCard.textContent=[
+    'WHO',
+    (p.participant.label ?? p.participant.id)+' ['+p.participant.id+']',
+    '',
+    'WHAT IT USED',
+    'Room Score: '+p.target.roomScoreSha256,
+    'Source refs: '+p.basis.sourceRefs.join(', '),
+    'Memory refs: '+(p.basis.memoryRefs.join(', ') || '(none)'),
+    'Memory invitations: '+(influences.join(', ') || '(none)'),
+    '',
+    'WHY THIS',
+    p.rationale,
+    '',
+    'WILL CHANGE',
+    p.changes.map(item=>item.field+': '+item.from+' → '+item.to).join('\n'),
+    '',
+    'WILL NOT CHANGE',
+    p.invariants.join('\n'),
+    '',
+    'WHO DECIDES',
+    'Human local decision only.',
+  ].join('\n');
+
+  const resolved=['ACCEPTED','REFUSED'].includes(activeAiProposalState);
+  q('#aiAccept').disabled=resolved;
+  q('#aiHold').disabled=resolved || activeAiProposalState==='HELD';
+  q('#aiRefuse').disabled=resolved;
+}
+
+q('#aiStage').onclick=async()=>{
+  if(!room?.roomScore)return;
+  const track=q('#aiTrack').value;
+  const offset=Number(q('#aiOffset').value);
+  const proposal=await createAiRoomScoreProposal(room,loadMemoryLedger(),{
+    participant:{
+      id:q('#aiParticipant').value.trim(),
+      label:'Room Score AI participant',
+      provider:q('#aiProvider').value.trim()
+    },
+    rationale:q('#aiRationale').value.trim(),
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:track,
+      value:offset
+    }
+  });
+  if(proposal.ok===false){alert(proposal.explanation);return;}
+  activeAiProposal=proposal;
+  activeAiProposalState='PENDING';
+  crossingReceipt.className='log fog';
+  crossingReceipt.textContent='(awaiting explicit human decision)';
+  renderCrossingRail();
+};
+
+async function decideAiCrossing(decision){
+  if(!activeAiProposal || !room?.roomScore)return;
+  const result=await resolveHumanAiCrossing(room,activeAiProposal,decision);
+  if(result.ok===false){
+    alert(result.explanation);
+    crossingStatus.className='fog';
+    crossingStatus.textContent=result.explanation;
+    return;
+  }
+
+  room=result.room;
+  activeAiProposalState=decision==='ACCEPT'?'ACCEPTED':decision==='REFUSE'?'REFUSED':'HELD';
+  crossingReceipt.className='log';
+  crossingReceipt.textContent=JSON.stringify(result.crossingReceipt,null,2);
+
+  if(decision==='ACCEPT'){
+    const spec=scoreSpecFromRoom();
+    if(spec)scoreSpec.value=JSON.stringify(spec,null,2);
+  }
+
+  renderRoom();
+  renderCrossingRail();
+}
+
+q('#aiAccept').onclick=()=>decideAiCrossing('ACCEPT');
+q('#aiHold').onclick=()=>decideAiCrossing('HOLD');
+q('#aiRefuse').onclick=()=>decideAiCrossing('REFUSE');
 
 function draftScore(){
   if(!room?.ok)return;
@@ -651,6 +827,8 @@ q('#scoreCompile').onclick=()=>{
     const next=compileRoomScore(room,JSON.parse(scoreSpec.value));
     if(next.ok===false){alert(next.explanation);return;}
     room=next;
+    activeAiProposal=null;
+    activeAiProposalState='EMPTY';
     renderRoom();
     q('#scoreConduct').disabled=false;
     scoreStatus.className='good';
