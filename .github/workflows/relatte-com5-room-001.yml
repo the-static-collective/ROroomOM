@@ -43,6 +43,18 @@ jobs:
           node --check experiments/relatte-com5-room-001/test.mjs
           node --test experiments/relatte-com5-room-001/test.mjs
 
+      - name: Syntax-check workstation browser module
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('experiments/relatte-com5-room-001/index.html').read_text()
+          match=re.search(r'<script type="module">(.*?)</script>',html,re.S)
+          assert match, 'module script missing'
+          Path('/tmp/room-workstation-ui.mjs').write_text(match.group(1))
+          PY
+          node --check /tmp/room-workstation-ui.mjs
+
       - name: Run local organ wrapper contracts
         run: |
           python3 -m unittest experiments/relatte-com5-room-001/test_workbench_organ.py -v
