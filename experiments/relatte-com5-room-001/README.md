@@ -128,3 +128,63 @@ The contract tests cover five-door preservation, fresh receiver-local identity, 
 ```
 
 **Design law:** the Room may inhabit a projection without claiming to become its source.
+
+
+## Room 002 — real organ dock + return request
+
+This branch adds the first actual Collective organ behind a Magic-Lego workstation block: **Static Workbench Source Inspector**.
+
+Run Static Workbench v0.2 locally on its normal loopback port, then from this experiment directory:
+
+```bash
+python3 organ_bridge.py
+```
+
+Open `http://127.0.0.1:13702/`.
+
+The page can now:
+
+1. discover sanitized Workbench-local repository entries;
+2. choose one repository and a bounded Markdown/text path;
+3. **prepare** the exact source read;
+4. explicitly **inspect** the same bytes only if HEAD/content remain unchanged;
+5. show the inspected excerpt in the Room without claiming source authority.
+
+The adapter reuses ROroomOM's existing `WorkbenchReadAdapter`; it does not add a second filesystem reader.
+
+```text
+SOURCE REF != LOCAL PATH
+WORKBENCH READ != SOURCE AUTHORITY
+INSPECTION != ADMISSION
+```
+
+The same Room can also export a bounded navigation request for one source-projected neighbor:
+
+```text
+Room encounter at A
+→ ask reLATTE to re-center on B
+→ request carries authority = none
+→ reLATTE independently re-verifies A → B
+→ fresh enterable B
+```
+
+The Room cannot manufacture a road by naming an arbitrary identifier.
+
+```text
+ROOM REQUEST != VERIFIED ROAD
+REQUESTED SUBJECT != AUTHORIZED SUBJECT
+reLATTE MUST REVERIFY NEIGHBOR
+```
+
+CI now exercises the complete loop using the actual producer and consumer branches:
+
+```text
+reLATTE signed history
+→ real enterable packet
+→ ROroomOM COMPOSE room
+→ Room navigation request
+→ reLATTE road re-verification
+→ fresh destination packet
+```
+
+This is the first round trip where navigation and inhabitation remain owned by separate projects.
