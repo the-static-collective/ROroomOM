@@ -263,3 +263,100 @@ Room 003 CI now:
 8. confirms source mutation and shared-world mutation remain false.
 
 That is the first real media-byte crossing in the COM⁵ workstation.
+
+
+## Room 004 — Video Window enters the future
+
+The second playable media Lego is now backed by **Haunted Blender**.
+
+The Room still receives only a reLATTE address:
+
+```text
+video-player
+sourceRef = sha256:<digest>
+```
+
+But unlike audio resolution, Video Window adds a selection boundary before playback:
+
+```text
+candidate clip exists
+!=
+filmmaker accepted it
+```
+
+Haunted Blender resolves only when the digest belongs to a currently valid:
+
+```text
+filmmaker_accepted_private_preview
+```
+
+with unchanged:
+
+- acceptance witness;
+- generation request lineage;
+- Scene Artifact relationship;
+- admission receipt;
+- MP4 bytes;
+- playable video stream.
+
+ROroomOM independently checks that the returned organ, status, digest, MIME type and loopback playback URL still match the exact `video-player` Lego request.
+
+Only then does the block become:
+
+```text
+<video controls>
+```
+
+while retaining:
+
+```text
+distributionAuthorized = false
+```
+
+### Local stack
+
+Run Haunted Blender's accepted-video resolver:
+
+```bash
+PYTHONPATH=. python -m haunted_blender.accepted_video_server \
+  ~/HauntedBlender \
+  --port 13704 \
+  --room-origin http://127.0.0.1:13702
+```
+
+Run the Room organ bridge:
+
+```bash
+python3 organ_bridge.py \
+  --port 13702 \
+  --workbench-port 13700 \
+  --vault-port 13703 \
+  --blender-port 13704
+```
+
+### Video laws
+
+```text
+ADDRESS != ACCEPTANCE
+CANDIDATE != FILMMAKER ACCEPTED TAKE
+VIDEO WINDOW != RELEASE
+PLAYBACK != BLENDER EDIT
+BLENDER ACCEPTANCE != ROOM AUTHORITY
+```
+
+### CI proof
+
+Room 004 keeps the complete reLATTE round trip and verified Vault audio proof, then additionally:
+
+1. checks out the Haunted Blender Video Window branch;
+2. builds a real synthetic Scene Artifact;
+3. creates a frozen take request;
+4. admits a synthetic MP4 candidate;
+5. explicitly filmmaker-accepts the private take;
+6. starts Blender's real read-only resolver;
+7. range-requests the MP4 from the Room origin and checks HTTP 206 + `ftyp`;
+8. resolves the exact digest through the ROroomOM Blender organ;
+9. upgrades the matching `video-player` Lego;
+10. preserves source mutation = false and distribution authorization = false.
+
+That is the first moving-image organ in the walkable COM⁵ workstation.
