@@ -994,6 +994,7 @@ const HUMAN_AI_DECISIONS=new Set(['ACCEPT','HOLD','REFUSE']);
 const HUMAN_OFFER_SCHEMA='roroomom.human-offer/v0';
 const AI_ECHO_SCHEMA='roroomom.ai-offer-echo/v0';
 const GUEST_PORT_SCHEMA='roroomom.guest-port/v0';
+const GUEST_DRAFT_SCHEMA='roroomom.guest-response-draft/v0';
 const GUEST_RESPONSE_SCHEMA='roroomom.guest-port-response/v0';
 const GUEST_PROPOSAL_SCHEMA='roroomom.guest-room-score-proposal/v0';
 const OFFER_ACTIONS=new Set([
@@ -1517,14 +1518,22 @@ export async function createGuestPortPacket(room, memories, offer) {
       proposalOps:['SET_MEDIA_OFFSET_MS'],
       humanDecisionRequired:true,
       schemas:{
+        draft:GUEST_DRAFT_SCHEMA,
         response:GUEST_RESPONSE_SCHEMA,
         proposal:GUEST_PROPOSAL_SCHEMA,
+      },
+      draftContract:{
+        participantType:'ai-participant',
+        required:['schema','participant','understanding','uncertainties'],
+        optional:['proposal'],
+        proposalOp:'SET_MEDIA_OFFSET_MS',
       },
     },
     authority:'transport-neutral-invitation',
     boundary:[
       'TRANSPORT != PARTICIPANT',
       'MODEL PROVIDER != AUTHORITY',
+      'DECLARED PARTICIPANT != VERIFIED PROVIDER IDENTITY',
       'GUEST PACKET != ROOM ACCESS',
       'SAME OFFER != SAME INTERPRETATION',
       'MULTIPLE ECHOES != CONSENSUS',
@@ -1590,8 +1599,10 @@ export async function createGuestPortResponse(packet, spec) {
   if (await hashCanonicalLocal(packetCore)!==packet.guestPortSha256)
     return fail('invalid-guest-port','Guest Port packet failed deterministic integrity verification.');
 
-  if (!plain(spec) || !validGuestParticipant(spec.participant))
-    return fail('invalid-guest-participant','Guest response requires an identified AI participant.');
+  if (!plain(spec) || spec.schema!==GUEST_DRAFT_SCHEMA)
+    return fail('invalid-guest-draft','Guest response requires roroomom.guest-response-draft/v0.');
+  if (!validGuestParticipant(spec.participant))
+    return fail('invalid-guest-participant','Guest response requires a declared AI participant.');
   if (!strictText(spec.understanding,1200))
     return fail('invalid-guest-echo','Guest response requires a bounded Echo.');
   const uncertainties=uniqueStrings(spec.uncertainties ?? [],12);
@@ -1653,6 +1664,7 @@ export async function createGuestPortResponse(packet, spec) {
     authority:'guest-response-only',
     boundary:[
       'GUEST RESPONSE != ROOM CONSEQUENCE',
+      'DECLARED PARTICIPANT != VERIFIED PROVIDER IDENTITY',
       'ECHO != CONSENSUS',
       'AGREEMENT != TRUTH',
       'DISAGREEMENT != FAILURE',
