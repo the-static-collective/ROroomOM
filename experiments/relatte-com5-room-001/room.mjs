@@ -991,6 +991,13 @@ export async function projectPerformanceMemory(memories, selector={}) {
 const AI_PROPOSAL_SCHEMA='roroomom.ai-room-score-proposal/v0';
 const HUMAN_AI_RECEIPT_SCHEMA='roroomom.human-ai-crossing-receipt/v0';
 const HUMAN_AI_DECISIONS=new Set(['ACCEPT','HOLD','REFUSE']);
+const HUMAN_OFFER_SCHEMA='roroomom.human-offer/v0';
+const AI_ECHO_SCHEMA='roroomom.ai-offer-echo/v0';
+const OFFER_ACTIONS=new Set([
+  'INSPECT_ROOM_SCORE',
+  'READ_PLAY_MEMORY',
+  'PROPOSE_MEDIA_OFFSET_MS',
+]);
 
 async function roomScoreSha256(room) {
   if (!room?.roomScore) throw new Error('ROOM_SCORE_REQUIRED');
@@ -1014,6 +1021,247 @@ function validOffsetPatch(room, patch) {
   return room.roomScore?.mediaTracks?.some(track=>track.instrument===patch.instrument) ?? false;
 }
 
+
+function uniqueStrings(values,max=20) {
+  if (!Array.isArray(values) || values.length>max) return null;
+  const out=[];
+  for (const value of values) {
+    if (!strictText(value,500) || out.includes(value)) return null;
+    out.push(value);
+  }
+  return out;
+}
+
+function offerProtectedInvariants() {
+  return [
+    'source subject',
+    'source media bytes',
+    'instrument source refs',
+    'resolved media sha256',
+    'lyric source ref',
+    'lyric cue ranges',
+    'reLATTE history',
+    'publication authority',
+  ];
+}
+
+export async function createHumanOffer(room, spec) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score before making a human offer.');
+  if (!plain(spec) || !strictText(spec.intent,1000))
+    return fail('invalid-human-intent','Human offer requires a bounded intent statement.');
+
+  const offeredInstruments=uniqueStrings(spec.offeredInstruments,16);
+  if (!offeredInstruments || offeredInstruments.length===0)
+    return fail('invalid-offered-material','Human offer requires at least one explicit offered instrument.');
+
+  const availableBlocks=new Map(scoredBlocks(room).map(block=>[block.localInstrumentId,block]));
+  const offered=[];
+  for (const id of offeredInstruments) {
+    const block=availableBlocks.get(id);
+    if (!block)
+      return fail('unavailable-offered-material','Human offer named an instrument outside the current Room Score.');
+    offered.push(clone(block));
+  }
+
+  const allowedActions=uniqueStrings(spec.allowedActions,8);
+  if (!allowedActions || allowedActions.length===0 || allowedActions.some(action=>!OFFER_ACTIONS.has(action)))
+    return fail('invalid-offer-capability','Human offer contains an unsupported capability.');
+
+  if (!plain(spec.memoryPolicy) || typeof spec.memoryPolicy.enabled!=='boolean')
+    return fail('invalid-memory-policy','Human offer requires an explicit memory policy.');
+
+  const allowedVerdicts=uniqueStrings(spec.memoryPolicy.allowedVerdicts ?? [],3);
+  if (!allowedVerdicts || allowedVerdicts.some(verdict=>!HUMAN_VERDICTS.has(verdict)))
+    return fail('invalid-memory-policy','Memory verdict filter must contain only keep, weird, or compost.');
+  if (!spec.memoryPolicy.enabled && allowedVerdicts.length!==0)
+    return fail('invalid-memory-policy','Disabled memory policy may not carry allowed verdicts.');
+  if (spec.memoryPolicy.enabled && !allowedActions.includes('READ_PLAY_MEMORY'))
+    return fail('memory-not-authorized','Memory cannot be enabled without READ_PLAY_MEMORY permission.');
+
+  if (!boundedInteger(spec.maxOffsetDeltaMs,0,600000))
+    return fail('invalid-offer-limit','Human offer requires a bounded maximum timing delta.');
+
+  const scoreSha256=await roomScoreSha256(room);
+  const core={
+    schema:HUMAN_OFFER_SCHEMA,
+    target:{
+      sourceSubject:room.sourceSubject,
+      encounterId:room.encounterId,
+      roomScoreSha256:scoreSha256,
+      roomScoreTitle:room.roomScore.title,
+    },
+    intent:spec.intent,
+    offered,
+    capabilities:{
+      allowedActions,
+      maxOffsetDeltaMs:spec.maxOffsetDeltaMs,
+    },
+    memoryPolicy:{
+      enabled:spec.memoryPolicy.enabled,
+      allowedVerdicts,
+    },
+    protected:offerProtectedInvariants(),
+    authority:'human-local-offer',
+    boundary:[
+      'REQUEST != PERMISSION',
+      'INTENT != INTERPRETATION',
+      'OFFER != COMMAND',
+      'MEMORY AVAILABLE != MEMORY INVITED',
+      'SILENCE != CONSENT',
+    ],
+  };
+  const offerSha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    offerSha256,
+    offerId:'human-offer:'+offerSha256,
+  };
+}
+
+async function verifiedHumanOffer(room, offer) {
+  if (!plain(offer)
+    || offer.schema!==HUMAN_OFFER_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(offer.offerSha256 ?? '')
+    || offer.offerId!=='human-offer:'+offer.offerSha256
+    || offer.authority!=='human-local-offer')
+    return null;
+
+  const core={
+    schema:offer.schema,
+    target:offer.target,
+    intent:offer.intent,
+    offered:offer.offered,
+    capabilities:offer.capabilities,
+    memoryPolicy:offer.memoryPolicy,
+    protected:offer.protected,
+    authority:offer.authority,
+    boundary:offer.boundary,
+  };
+  if (await hashCanonicalLocal(core)!==offer.offerSha256) return null;
+  if (offer.target?.sourceSubject!==room.sourceSubject
+    || offer.target?.encounterId!==room.encounterId)
+    return null;
+  if (offer.target?.roomScoreSha256!==await roomScoreSha256(room))
+    return null;
+  return core;
+}
+
+export async function createAiOfferEcho(room, memories, offer, spec) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','A Room Score must exist before an AI participant can echo a human offer.');
+  if (!Array.isArray(memories))
+    return fail('invalid-memory-ledger','AI echo requires a memory ledger array.');
+  if (!plain(spec) || !validAiParticipant(spec.participant))
+    return fail('invalid-ai-participant','AI echo requires an explicit participant identity.');
+  if (!strictText(spec.understanding,1200))
+    return fail('invalid-ai-understanding','AI echo requires a bounded statement of understanding.');
+
+  const uncertainties=uniqueStrings(spec.uncertainties ?? [],12);
+  if (!uncertainties)
+    return fail('invalid-ai-uncertainty','AI echo uncertainties must be bounded unique strings.');
+
+  const offerCore=await verifiedHumanOffer(room,offer);
+  if (!offerCore)
+    return fail('invalid-human-offer','Human offer failed integrity, target, or score-precondition verification.');
+
+  let observedProjection=await projectPerformanceMemory([],{sourceSubject:room.sourceSubject});
+  if (offer.memoryPolicy.enabled && offer.capabilities.allowedActions.includes('READ_PLAY_MEMORY')) {
+    const allProjection=await projectPerformanceMemory(memories,{sourceSubject:room.sourceSubject});
+    if (allProjection.ok===false) return allProjection;
+    const validIds=new Set(allProjection.memoryRefs);
+    const permitted=memories.filter(memory=>
+      validIds.has(memory?.memoryId)
+      && offer.memoryPolicy.allowedVerdicts.includes(memory?.humanVerdict?.verdict)
+    );
+    observedProjection=await projectPerformanceMemory(permitted,{sourceSubject:room.sourceSubject});
+    if (observedProjection.ok===false) return observedProjection;
+  }
+
+  const core={
+    schema:AI_ECHO_SCHEMA,
+    participant:{
+      type:'ai-participant',
+      id:spec.participant.id,
+      ...(spec.participant.label!==undefined ? {label:spec.participant.label} : {}),
+      ...(spec.participant.provider!==undefined ? {provider:spec.participant.provider} : {}),
+      ...(spec.participant.model!==undefined ? {model:spec.participant.model} : {}),
+    },
+    offer:{
+      offerId:offer.offerId,
+      offerSha256:offer.offerSha256,
+      intent:offer.intent,
+    },
+    understanding:spec.understanding,
+    uncertainties,
+    capabilitiesHeard:{
+      allowedActions:[...offer.capabilities.allowedActions],
+      maxOffsetDeltaMs:offer.capabilities.maxOffsetDeltaMs,
+    },
+    offeredHeard:offer.offered.map(block=>({
+      localInstrumentId:block.localInstrumentId,
+      kind:block.kind,
+      sourceRef:block.sourceRef,
+      resolvedSha256:block.resolvedSha256,
+    })),
+    protectedHeard:[...offer.protected],
+    memoryObserved:{
+      enabled:offer.memoryPolicy.enabled,
+      allowedVerdicts:[...offer.memoryPolicy.allowedVerdicts],
+      memoryRefs:[...observedProjection.memoryRefs],
+      invitations:observedProjection.prophecy.invitations.map(item=>({
+        kind:item.kind,
+        evidenceRefs:[...item.evidenceRefs],
+        authority:item.authority,
+      })),
+      authority:observedProjection.authority,
+      prophecyAuthority:observedProjection.prophecy.authority,
+    },
+    authority:'echo-only',
+    boundary:[
+      'ECHO != INTENT',
+      'INTERPRETATION != AUTHORITY',
+      'HEARD CAPABILITY != NEW CAPABILITY',
+      'MEMORY OBSERVED != MEMORY AUTHORITY',
+      'ECHO != PROPOSAL',
+    ],
+  };
+  const echoSha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    echoSha256,
+    echoId:'ai-echo:'+echoSha256,
+  };
+}
+
+async function verifiedAiEcho(room, offer, echo) {
+  if (!plain(echo)
+    || echo.schema!==AI_ECHO_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(echo.echoSha256 ?? '')
+    || echo.echoId!=='ai-echo:'+echo.echoSha256
+    || echo.authority!=='echo-only'
+    || echo.offer?.offerId!==offer.offerId
+    || echo.offer?.offerSha256!==offer.offerSha256)
+    return null;
+
+  const core={
+    schema:echo.schema,
+    participant:echo.participant,
+    offer:echo.offer,
+    understanding:echo.understanding,
+    uncertainties:echo.uncertainties,
+    capabilitiesHeard:echo.capabilitiesHeard,
+    offeredHeard:echo.offeredHeard,
+    protectedHeard:echo.protectedHeard,
+    memoryObserved:echo.memoryObserved,
+    authority:echo.authority,
+    boundary:echo.boundary,
+  };
+  if (await hashCanonicalLocal(core)!==echo.echoSha256) return null;
+  if (!await verifiedHumanOffer(room,offer)) return null;
+  return core;
+}
+
 async function verifiedProposalCore(proposal) {
   if (!plain(proposal)
     || proposal.schema!==AI_PROPOSAL_SCHEMA
@@ -1027,6 +1275,7 @@ async function verifiedProposalCore(proposal) {
     participant:proposal.participant,
     target:proposal.target,
     basis:proposal.basis,
+    crossingContext:proposal.crossingContext ?? null,
     rationale:proposal.rationale,
     patch:proposal.patch,
     changes:proposal.changes,
@@ -1050,13 +1299,62 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
     return fail('invalid-ai-patch','First crossing slice allows one bounded media-offset patch only.');
 
   const scoreSha256=await roomScoreSha256(room);
-  const memoryProjection=await projectPerformanceMemory(memories,{
+  const current=room.roomScore.mediaTracks.find(track=>track.instrument===spec.patch.instrument);
+  if (!current) return fail('invalid-ai-patch','Target media track is absent.');
+
+  let memoryProjection=await projectPerformanceMemory(memories,{
     sourceSubject:room.sourceSubject,
   });
   if (memoryProjection.ok===false) return memoryProjection;
 
-  const current=room.roomScore.mediaTracks.find(track=>track.instrument===spec.patch.instrument);
-  if (!current) return fail('invalid-ai-patch','Target media track is absent.');
+  let crossingContext=null;
+  if (spec.crossing!==undefined) {
+    if (!plain(spec.crossing))
+      return fail('invalid-offer-echo-crossing','Crossed AI proposal requires a human offer and AI echo.');
+    const offer=spec.crossing.offer;
+    const echo=spec.crossing.echo;
+    const offerCore=await verifiedHumanOffer(room,offer);
+    if (!offerCore)
+      return fail('invalid-human-offer','Human offer failed integrity, target, or score-precondition verification.');
+    const echoCore=await verifiedAiEcho(room,offer,echo);
+    if (!echoCore)
+      return fail('invalid-ai-echo','AI echo failed integrity or offer-binding verification.');
+    if (echo.participant?.id!==spec.participant.id)
+      return fail('ai-participant-mismatch','Proposal participant must match the AI participant that echoed the offer.');
+    if (!offer.capabilities.allowedActions.includes('PROPOSE_MEDIA_OFFSET_MS'))
+      return fail('proposal-not-authorized','Human offer did not permit media-offset proposals.');
+    if (!offer.offered.some(block=>block.localInstrumentId===spec.patch.instrument))
+      return fail('instrument-not-offered','AI proposal targets material the human did not offer.');
+
+    const delta=Math.abs(spec.patch.value-current.offsetMs);
+    if (delta>offer.capabilities.maxOffsetDeltaMs)
+      return fail('proposal-exceeds-offer-limit','AI proposal exceeds the human offer timing limit.');
+
+    memoryProjection={
+      schema:PERFORMANCE_MEMORY_PROJECTION_SCHEMA,
+      selector:{sourceSubject:room.sourceSubject},
+      playCount:echo.memoryObserved.memoryRefs.length,
+      verdictCounts:{keep:0,weird:0,compost:0},
+      reopenRequests:0,
+      memoryRefs:[...echo.memoryObserved.memoryRefs],
+      learningRefs:[],
+      prophecy:{
+        schema:'roroomom.performance-prophecy/v0',
+        status:'echo-bounded-memory-view',
+        invitations:echo.memoryObserved.invitations.map(item=>clone(item)),
+        authority:echo.memoryObserved.prophecyAuthority,
+      },
+      boundary:['ECHO-BOUNDED MEMORY VIEW'],
+      authority:echo.memoryObserved.authority,
+    };
+
+    crossingContext={
+      humanOfferId:offer.offerId,
+      humanOfferSha256:offer.offerSha256,
+      aiEchoId:echo.echoId,
+      aiEchoSha256:echo.echoSha256,
+    };
+  }
 
   const core={
     schema:AI_PROPOSAL_SCHEMA,
@@ -1084,6 +1382,7 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
       memoryAuthority:memoryProjection.authority,
       prophecyAuthority:memoryProjection.prophecy.authority,
     },
+    crossingContext,
     rationale:spec.rationale,
     patch:{
       op:'SET_MEDIA_OFFSET_MS',
@@ -1114,6 +1413,8 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
       'INTERPRETATION != INTENT',
       'PROPOSAL != CONSENT',
       'MEMORY INFLUENCE != PERMISSION',
+      'OFFER != COMMAND',
+      'ECHO != INTENT',
       'ACCEPTANCE REQUIRES HUMAN CROSSING',
     ],
   };
@@ -1184,6 +1485,7 @@ export async function resolveHumanAiCrossing(room, proposal, decision) {
     proposalId:proposal.proposalId,
     proposalSha256:proposal.proposalSha256,
     participant:proposal.participant,
+    crossingContext:proposal.crossingContext ?? null,
     sourceSubject:room.sourceSubject,
     encounterId:room.encounterId,
     decision,
