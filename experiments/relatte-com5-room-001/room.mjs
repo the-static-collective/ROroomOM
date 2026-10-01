@@ -176,6 +176,7 @@ export function enterDoor(navigator, role, approved, localId=null) {
     sourceObservations:clone(door.observations),
     sourceNeighbors:[...navigator.neighbors],
     instrumentDeck,
+    resolvedMedia:{},
     phase:'entered',
     localHistory:[{
       type:'ENTER_DOOR',
@@ -252,6 +253,7 @@ export function exportEncounterReceipt(room) {
       mediaType:item.mediaType,
     })),
     localHistory:clone(room.localHistory),
+    resolvedMedia:clone(room.resolvedMedia ?? {}),
     sourceAuthority:'none',
     destinationDisposition:'held',
     sourceMutated:false,
@@ -289,5 +291,104 @@ export function makeNavigationRequest(room, targetSubject) {
       'REQUESTED SUBJECT != AUTHORIZED SUBJECT',
       'reLATTE MUST REVERIFY NEIGHBOR',
     ],
+  };
+}
+
+
+const SHA_ADDRESS = /^sha256:([a-f0-9]{64})$/;
+
+export function prepareMediaResolution(room, localInstrumentId) {
+  if (!room?.ok || room.status !== 'local-encounter' || !Array.isArray(room.instrumentDeck))
+    return fail('room-not-open','Enter a COM5 door before resolving media.');
+  if (room.phase === 'away')
+    return fail('away','Return to the room before resolving media.');
+
+  const instrument=room.instrumentDeck.find(item=>item.localInstrumentId===localInstrumentId);
+  if (!instrument)
+    return fail('unknown-instrument','Instrument is not in this local deck.');
+  if (instrument.kind !== 'audio-player')
+    return fail('not-audio-instrument','Only audio-player instruments use the first Vault resolver.');
+  if (typeof instrument.sourceRef !== 'string' || !SHA_ADDRESS.test(instrument.sourceRef))
+    return fail('unaddressed-audio','Audio resolution requires a sha256 content address.');
+
+  return {
+    schema:'roroomom.media-resolution-request/v0',
+    localInstrumentId,
+    address:instrument.sourceRef,
+    expectedMediaTypes:['audio/wav','audio/mpeg'],
+    authority:'none',
+    boundary:[
+      'MEDIA REQUEST != RESOLUTION',
+      'RESOLVER MAY NOT SUBSTITUTE ADDRESS',
+      'PLAYBACK != SOURCE MUTATION',
+    ],
+  };
+}
+
+function validPlaybackUrl(value, digest) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url=new URL(value);
+    return url.protocol==='http:'
+      && ['127.0.0.1','localhost'].includes(url.hostname)
+      && /^\d+$/.test(url.port)
+      && url.username===''
+      && url.password===''
+      && url.pathname===`/v0/media/${digest}`
+      && url.search===''
+      && url.hash==='';
+  } catch {
+    return false;
+  }
+}
+
+export function acceptMediaResolution(room, localInstrumentId, resolution) {
+  const request=prepareMediaResolution(room,localInstrumentId);
+  if (request.ok===false) return request;
+
+  const match=SHA_ADDRESS.exec(request.address);
+  const digest=match?.[1];
+  if (!digest
+    || !plain(resolution)
+    || resolution.organ!=='autodiscography-vault.audio-resolver-v0'
+    || resolution.status!=='resolved-verified'
+    || resolution.address!==request.address
+    || resolution.sha256!==digest
+    || !request.expectedMediaTypes.includes(resolution.mediaType)
+    || !Number.isSafeInteger(resolution.byteLength)
+    || resolution.byteLength<=0
+    || resolution.authority!=='none'
+    || !validPlaybackUrl(resolution.playbackUrl,digest)) {
+    return fail('media-resolution-mismatch','Vault media result does not match the requested audio instrument.');
+  }
+
+  const accepted={
+    organ:resolution.organ,
+    status:resolution.status,
+    address:resolution.address,
+    sha256:resolution.sha256,
+    mediaType:resolution.mediaType,
+    byteLength:resolution.byteLength,
+    playbackUrl:resolution.playbackUrl,
+    authority:'none',
+  };
+
+  return {
+    ...room,
+    resolvedMedia:{
+      ...(room.resolvedMedia ?? {}),
+      [localInstrumentId]:accepted,
+    },
+    localHistory:[
+      ...room.localHistory,
+      {
+        type:'MEDIA_RESOLVED',
+        localInstrumentId,
+        address:accepted.address,
+        organ:accepted.organ,
+      },
+    ],
+    sourceMutated:false,
+    sharedWorldChanged:false,
   };
 }

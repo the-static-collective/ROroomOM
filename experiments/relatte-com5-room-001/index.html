@@ -19,14 +19,16 @@ button,input,select{font:inherit}
 button{padding:.55rem .6rem;cursor:pointer}
 input,select{padding:.45rem;width:100%;margin:.3rem 0}
 .door.active{outline:2px solid currentColor}
-.lego{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.65rem}
-.instrument{border:1px solid #888;padding:.75rem;min-height:140px;overflow-wrap:anywhere}
+.lego{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.65rem}
+.instrument{border:1px solid #888;padding:.75rem;min-height:160px;overflow-wrap:anywhere}
 .instrument button{margin-top:.5rem}
+.instrument audio{width:100%;margin-top:.65rem}
 .fog{opacity:.65}
 .good{font-weight:700}
 .log{white-space:pre-wrap;max-height:260px;overflow:auto}
 .row{display:flex;gap:.4rem;flex-wrap:wrap}
 .row button{flex:1}
+.resolved{border-style:double}
 @media(max-width:850px){.shell{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid #555}.doors{grid-template-columns:1fr}}
 </style>
 </head>
@@ -65,6 +67,13 @@ input,select{padding:.45rem;width:100%;margin:.3rem 0}
   <div id="deck" class="lego"></div>
 
   <div class="panel">
+    <strong>LOCAL ORGAN DOCK · AUTODISCOGRAPHY VAULT</strong>
+    <div id="vaultStatus" class="fog">Vault audio resolver not checked.</div>
+    <button id="vaultConnect">Check verified-audio resolver</button>
+    <p class="fog">Audio Lego resolves only when its exact SHA-256 address exists as verified local Vault bytes.</p>
+  </div>
+
+  <div class="panel">
     <strong>LOCAL ORGAN DOCK · STATIC WORKBENCH</strong>
     <div id="organStatus" class="fog">Workbench organ not checked.</div>
     <div class="row">
@@ -92,17 +101,20 @@ input,select{padding:.45rem;width:100%;margin:.3rem 0}
 </div>
 <script type="module">
 import {
+  acceptMediaResolution,
   actEncounter,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
+  prepareMediaResolution,
   useInstrument
 } from './room.mjs';
 
 let navigatorState=null;
 let room=null;
 let organTicket=null;
+let vaultConnected=false;
 
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
@@ -115,6 +127,36 @@ function saveJson(filename,value){
   a.download=filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+async function organFetch(path,options={}){
+  const response=await fetch(path,options);
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.detail ?? 'Organ request failed.');
+  return data;
+}
+
+async function resolveAudioInstrument(item){
+  const request=prepareMediaResolution(room,item.localInstrumentId);
+  if(request.ok===false){alert(request.explanation);return;}
+
+  try{
+    const resolved=await organFetch('/api/organs/vault/resolve',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Room-Action':'explicit-user-resolve'
+      },
+      body:JSON.stringify({address:request.address})
+    });
+
+    const next=acceptMediaResolution(room,item.localInstrumentId,resolved);
+    if(next.ok===false){alert(next.explanation);return;}
+    room=next;
+    renderRoom();
+  }catch(error){
+    alert(error.message);
+  }
 }
 
 function renderNavigator(){
@@ -173,7 +215,31 @@ function renderRoom(){
   for(const item of room.instrumentDeck){
     const card=document.createElement('section');
     card.className='instrument';
+    const resolved=room.resolvedMedia?.[item.localInstrumentId] ?? null;
+    if(resolved) card.classList.add('resolved');
+
     card.innerHTML='<strong>'+esc(item.label)+'</strong><br><span class="fog">'+esc(item.kind)+(item.mediaType?' · '+esc(item.mediaType):'')+'</span><br><small>'+esc(item.sourceRef ?? 'receiver-local structural instrument')+'</small>';
+
+    if(item.kind==='audio-player'){
+      if(resolved){
+        const meta=document.createElement('p');
+        meta.className='fog';
+        meta.textContent='Vault verified · '+resolved.byteLength+' bytes · '+resolved.sha256.slice(0,12)+'…';
+        card.append(meta);
+
+        const audio=document.createElement('audio');
+        audio.controls=true;
+        audio.preload='metadata';
+        audio.src=resolved.playbackUrl;
+        card.append(audio);
+      }else{
+        const resolveButton=document.createElement('button');
+        resolveButton.textContent=vaultConnected?'Resolve verified audio':'Resolve through Vault';
+        resolveButton.onclick=()=>resolveAudioInstrument(item);
+        card.append(resolveButton);
+      }
+    }
+
     const use=document.createElement('button');
     use.textContent='Use locally';
     use.onclick=()=>{
@@ -191,13 +257,6 @@ function renderRoom(){
   q('#navRequest').disabled=!q('#neighborSelect').value;
   log.className='log';
   log.textContent=room.localHistory.map((item,index)=>String(index+1).padStart(2,'0')+'  '+JSON.stringify(item)).join('\n');
-}
-
-async function organFetch(path,options={}){
-  const response=await fetch(path,options);
-  const data=await response.json();
-  if(!response.ok) throw new Error(data.detail ?? 'Organ request failed.');
-  return data;
 }
 
 q('#sample').onclick=async()=>{
@@ -225,6 +284,22 @@ q('#navRequest').onclick=()=>{
 q('#leave').onclick=()=>{const next=actEncounter(room,'LEAVE');if(next.ok){room=next;renderRoom();}};
 q('#return').onclick=()=>{const next=actEncounter(room,'RETURN');if(next.ok){room=next;renderRoom();}};
 q('#receipt').onclick=()=>saveJson('roroomom-relatte-com5-local-receipt.json',exportEncounterReceipt(room));
+
+q('#vaultConnect').onclick=async()=>{
+  try{
+    const status=await organFetch('/api/organs/vault/status');
+    vaultConnected=status.connected===true;
+    q('#vaultStatus').className=vaultConnected?'good':'fog';
+    q('#vaultStatus').textContent=vaultConnected
+      ? 'Autodiscography Vault connected · verified content-address playback available.'
+      : 'Vault resolver unavailable or incompatible.';
+    renderRoom();
+  }catch(error){
+    vaultConnected=false;
+    q('#vaultStatus').className='fog';
+    q('#vaultStatus').textContent='Vault resolver unavailable. Start its read-only loopback service first.';
+  }
+};
 
 q('#organConnect').onclick=async()=>{
   try{

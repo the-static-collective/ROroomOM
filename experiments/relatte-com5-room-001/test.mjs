@@ -3,11 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  acceptMediaResolution,
   actEncounter,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
+  prepareMediaResolution,
   useInstrument,
 } from './room.mjs';
 
@@ -123,4 +125,65 @@ test('Room refuses to request a destination absent from the source projection',(
 
   assert.equal(request.ok,false);
   assert.equal(request.code,'not-source-neighbor');
+});
+
+
+test('audio resolution request preserves exact Lego address',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:audio-resolve');
+  const request=prepareMediaResolution(room,'lego:2:audio-player');
+
+  assert.equal(request.schema,'roroomom.media-resolution-request/v0');
+  assert.equal(request.address,'sha256:'+'1'.repeat(64));
+  assert.equal(request.authority,'none');
+});
+
+test('matching Vault resolution upgrades the local audio instrument only',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:audio-accept');
+  const digest='1'.repeat(64);
+
+  const next=acceptMediaResolution(room,'lego:2:audio-player',{
+    organ:'autodiscography-vault.audio-resolver-v0',
+    status:'resolved-verified',
+    address:'sha256:'+digest,
+    sha256:digest,
+    mediaType:'audio/wav',
+    byteLength:4096,
+    playbackUrl:'http://127.0.0.1:13703/v0/media/'+digest,
+    authority:'none',
+  });
+
+  assert.equal(next.ok,true);
+  assert.equal(next.resolvedMedia['lego:2:audio-player'].sha256,digest);
+  assert.equal(next.localHistory.at(-1)?.type,'MEDIA_RESOLVED');
+  assert.equal(next.sourceMutated,false);
+});
+
+test('Vault resolver cannot substitute another audio address',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:audio-substitution');
+
+  const refused=acceptMediaResolution(room,'lego:2:audio-player',{
+    organ:'autodiscography-vault.audio-resolver-v0',
+    status:'resolved-verified',
+    address:'sha256:'+'2'.repeat(64),
+    sha256:'2'.repeat(64),
+    mediaType:'audio/wav',
+    byteLength:4096,
+    playbackUrl:'http://127.0.0.1:13703/v0/media/'+'2'.repeat(64),
+    authority:'none',
+  });
+
+  assert.equal(refused.ok,false);
+  assert.equal(refused.code,'media-resolution-mismatch');
+});
+
+test('non-audio Lego block cannot use first Vault audio resolver',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:not-audio');
+  const request=prepareMediaResolution(room,'lego:3:text-sheet');
+
+  assert.equal(request.ok,false);
+  assert.equal(request.code,'not-audio-instrument');
 });

@@ -188,3 +188,78 @@ reLATTE signed history
 ```
 
 This is the first round trip where navigation and inhabitation remain owned by separate projects.
+
+
+## Room 003 — verified audio becomes playable
+
+The first media Lego is now backed by an independently governed organ: **Autodiscography Vault**.
+
+The Room still receives only a reLATTE content address:
+
+```text
+audio-player
+sourceRef = sha256:<digest>
+```
+
+Resolution proceeds through three separate boundaries:
+
+```text
+reLATTE address
+→ ROroomOM media-resolution request
+→ Autodiscography Vault resolver
+→ verified receipt lookup
+→ exact local byte re-verification
+→ read-only loopback media URL
+→ ROroomOM verifies returned digest/address
+→ browser audio controls
+```
+
+The Room never opens a Vault path and the Vault never receives Room authority.
+
+### Run locally
+
+Start the Vault resolver from the `autodiscography-vault` checkout:
+
+```bash
+npm run resolver:serve -- \
+  --vault-root /path/to/Autodiscography-Vault \
+  --port 13703 \
+  --room-origin http://127.0.0.1:13702
+```
+
+Then run this experiment's bridge:
+
+```bash
+python3 organ_bridge.py --port 13702 --workbench-port 13700 --vault-port 13703
+```
+
+Open `http://127.0.0.1:13702/`.
+
+Enter a COMPOSE room containing an `audio-player` whose `sourceRef` is the SHA-256 address of a verified Vault audio object. Press **Resolve verified audio**. Only after the Vault returns the same address/digest and a compatible read-only playback URL does the card become a browser `<audio controls>` player.
+
+The bundled demo packet uses synthetic placeholder hashes, so its player will correctly refuse unless a matching local Vault object exists. Use a real reLATTE packet whose audio ref matches admitted Vault bytes for live playback.
+
+### Media laws
+
+```text
+MEDIA REQUEST != RESOLUTION
+RESOLVER MAY NOT SUBSTITUTE ADDRESS
+PLAYER != OWNER
+PLAYBACK != SOURCE MUTATION
+VAULT RESOLUTION != ROOM ADMISSION
+```
+
+### CI proof
+
+Room 003 CI now:
+
+1. verifies reLATTE and the existing Room round trip;
+2. checks out the Vault resolver branch;
+3. admits a synthetic RIFF/WAVE object into a temporary Vault;
+4. starts the real loopback Vault resolver;
+5. requests a browser-origin byte range and checks `206`, CORS, RIFF and WAVE bytes;
+6. resolves the exact hash through the ROroomOM Vault organ;
+7. upgrades the matching audio Lego through the Room kernel;
+8. confirms source mutation and shared-world mutation remain false.
+
+That is the first real media-byte crossing in the COM⁵ workstation.
