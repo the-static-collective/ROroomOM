@@ -83,6 +83,25 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
   </div>
 
   <div class="panel">
+    <strong>PLAY MEMORY · THE BLOCK REMEMBERS BEING PLAYED</strong>
+    <div id="memoryStatus" class="fog">No attributable performance memory projected yet.</div>
+    <div class="row">
+      <select id="memoryVerdict" aria-label="Human performance verdict">
+        <option value="keep">keep</option>
+        <option value="weird">weird</option>
+        <option value="compost">compost</option>
+      </select>
+      <label><input id="memoryReopen" type="checkbox"> invite re-open</label>
+    </div>
+    <div class="row">
+      <button id="memoryRemember" disabled>Remember this performed score</button>
+      <button id="memoryExport">Export local memory ledger</button>
+    </div>
+    <div id="memoryOutput" class="log fog">(receipt-backed memory only; playback alone does not count)</div>
+    <p class="fog">Memory may produce invitations. It never auto-reopens, auto-mutates, changes a source, or becomes programming authority.</p>
+  </div>
+
+  <div class="panel">
     <strong>LOCAL ORGAN DOCK · AUTODISCOGRAPHY VAULT</strong>
     <div id="vaultStatus" class="fog">Vault audio resolver not checked.</div>
     <button id="vaultConnect">Check verified-audio resolver</button>
@@ -129,11 +148,13 @@ import {
   actEncounter,
   actRoomScore,
   compileRoomScore,
+  createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
   prepareMediaResolution,
+  projectPerformanceMemory,
   roomScoreFrame,
   useInstrument
 } from './room.mjs';
@@ -148,7 +169,20 @@ let scoreAnimation=null;
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
 const scoreStatus=q('#scoreStatus'), scoreSpec=q('#scoreSpec'), scoreWindow=q('#scoreWindow');
+const memoryStatus=q('#memoryStatus'), memoryOutput=q('#memoryOutput');
+const MEMORY_KEY='roroomom.performance-memory.v0';
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+
+function loadMemoryLedger(){
+  try{
+    const value=JSON.parse(localStorage.getItem(MEMORY_KEY) ?? '[]');
+    return Array.isArray(value)?value:[];
+  }catch{return [];}
+}
+
+function persistMemoryLedger(memories){
+  localStorage.setItem(MEMORY_KEY,JSON.stringify(memories));
+}
 
 function saveJson(filename,value){
   const blob=new Blob([JSON.stringify(value,null,2)+'\n'],{type:'application/json'});
@@ -278,6 +312,8 @@ function renderRoom(){
     q('#return').disabled=true;
     q('#receipt').disabled=true;
     q('#navRequest').disabled=true;
+    q('#memoryRemember').disabled=true;
+    void refreshMemoryViews();
     return;
   }
 
@@ -287,6 +323,7 @@ function renderRoom(){
   for(const item of room.instrumentDeck){
     const card=document.createElement('section');
     card.className='instrument';
+    if(item.sourceRef)card.dataset.sourceRef=item.sourceRef;
     const resolved=room.resolvedMedia?.[item.localInstrumentId] ?? null;
     const resolvedText=room.resolvedText?.[item.localInstrumentId] ?? null;
     if(resolved || resolvedText) card.classList.add('resolved');
@@ -392,6 +429,10 @@ function renderRoom(){
       ? 'All three Lego blocks resolved. Draft or enter an explicit local score.'
       : 'Resolve audio, video, and an exact Text Sheet before compiling a score.';
 
+  const wasConducted=room.localHistory.some(item=>item?.type==='ROOM_SCORE_CONDUCT');
+  q('#memoryRemember').disabled=!room.roomScore || !wasConducted;
+  void refreshMemoryViews();
+
   q('#leave').disabled=room.phase==='away';
   q('#return').disabled=room.phase!=='away';
   q('#receipt').disabled=false;
@@ -425,6 +466,74 @@ q('#navRequest').onclick=()=>{
 q('#leave').onclick=()=>{const next=actEncounter(room,'LEAVE');if(next.ok){room=next;renderRoom();}};
 q('#return').onclick=()=>{const next=actEncounter(room,'RETURN');if(next.ok){room=next;renderRoom();}};
 q('#receipt').onclick=()=>saveJson('roroomom-relatte-com5-local-receipt.json',exportEncounterReceipt(room));
+
+async function refreshMemoryViews(){
+  const ledger=loadMemoryLedger();
+  if(!room?.ok){
+    memoryStatus.className='fog';
+    memoryStatus.textContent='No attributable performance memory projected yet.';
+    memoryOutput.textContent='(receipt-backed memory only; playback alone does not count)';
+    return;
+  }
+
+  const subject=await projectPerformanceMemory(ledger,{sourceSubject:room.sourceSubject});
+  if(subject.ok===false){
+    memoryStatus.className='fog';
+    memoryStatus.textContent=subject.explanation;
+    return;
+  }
+
+  const invitations=subject.prophecy.invitations.map(item=>item.kind);
+  memoryStatus.className=subject.playCount?'good':'fog';
+  memoryStatus.textContent=subject.playCount
+    ? 'This particular has '+subject.playCount+' verified local performance memor'+(subject.playCount===1?'y':'ies')+'.'
+    : 'No verified local performance memories for this particular yet.';
+  memoryOutput.className='log';
+  memoryOutput.textContent=JSON.stringify({
+    playCount:subject.playCount,
+    verdictCounts:subject.verdictCounts,
+    reopenRequests:subject.reopenRequests,
+    invitations,
+    authority:subject.authority,
+    prophecyAuthority:subject.prophecy.authority
+  },null,2);
+
+  for(const card of deck.querySelectorAll('[data-source-ref]')){
+    const sourceRef=card.dataset.sourceRef;
+    const projection=await projectPerformanceMemory(ledger,{sourceRef});
+    let badge=card.querySelector('.play-memory-badge');
+    if(!badge){
+      badge=document.createElement('p');
+      badge.className='fog play-memory-badge';
+      card.append(badge);
+    }
+    const blockInvites=projection.prophecy.invitations.map(item=>item.kind);
+    badge.textContent=projection.playCount
+      ? 'PLAY MEMORY · '+projection.playCount+' performance'+(projection.playCount===1?'':'s')+(blockInvites.length?' · invites: '+blockInvites.join(', '):'')
+      : 'PLAY MEMORY · no verified prior performance';
+  }
+}
+
+q('#memoryRemember').onclick=async()=>{
+  if(!room?.ok)return;
+  const memory=await createPerformanceMemory(room,{
+    verdict:q('#memoryVerdict').value,
+    reopenRequested:q('#memoryReopen').checked
+  });
+  if(memory.ok===false){alert(memory.explanation);return;}
+
+  const ledger=loadMemoryLedger();
+  const next=ledger.some(item=>item?.memoryId===memory.memoryId)
+    ? ledger
+    : [...ledger,memory];
+  persistMemoryLedger(next);
+  q('#memoryReopen').checked=false;
+  await refreshMemoryViews();
+};
+
+q('#memoryExport').onclick=()=>{
+  saveJson('roroomom-performance-memory-ledger.json',loadMemoryLedger());
+};
 
 function draftScore(){
   if(!room?.ok)return;
