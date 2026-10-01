@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 006 play-memory contract
+name: reLATTE COM5 Room 007 human AI crossing contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-006-play-memory
+      - experiment/relatte-com5-room-007-human-ai-crossing
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -251,6 +251,13 @@ jobs:
       - name: Turn real performed score into verified Play Memory
         run: |
           node experiments/relatte-com5-room-001/play-memory-contract.mjs \
+            vault-descriptor.json \
+            blender-descriptor.json \
+            room-score-lyrics.txt
+
+      - name: Cross human and AI over real Room memory
+        run: |
+          node experiments/relatte-com5-room-001/human-ai-crossing-contract.mjs \
             vault-descriptor.json \
             blender-descriptor.json \
             room-score-lyrics.txt
