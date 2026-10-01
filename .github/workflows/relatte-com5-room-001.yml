@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 001 contract
+name: reLATTE COM5 Room 002 organ + round-trip contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-001
+      - experiment/relatte-com5-room-002-organ-adapters
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -33,19 +33,43 @@ jobs:
           node --check experiments/relatte-com5-room-001/test.mjs
           node --test experiments/relatte-com5-room-001/test.mjs
 
-      - name: Checkout reLATTE producer branch
+      - name: Run Workbench organ wrapper contract
+        run: |
+          python3 -m unittest experiments/relatte-com5-room-001/test_workbench_organ.py -v
+          python3 -m py_compile experiments/relatte-com5-room-001/workbench_organ.py
+          python3 -m py_compile experiments/relatte-com5-room-001/organ_bridge.py
+
+      - name: Checkout reLATTE round-trip branch
         uses: actions/checkout@v4
         with:
           repository: the-static-collective/reLATTE
-          ref: feat/enterable-particular
+          ref: feat/room-return-request
           path: _relatte
 
-      - name: Produce real enterable particular
+      - name: Verify reLATTE and produce real history bundle
         working-directory: _relatte
         run: |
           npm install
-          npm run --silent enter:song > ../enterable-song.json
+          npm run verify
+          npm run --silent enter:bundle > ../enterable-bundle.json
+
+      - name: Extract real enterable packet
+        run: |
+          node -e "const fs=require('fs');const b=JSON.parse(fs.readFileSync('enterable-bundle.json','utf8'));fs.writeFileSync('enterable-song.json',JSON.stringify(b.packet,null,2)+'\n')"
 
       - name: Cross-repo producer consumer contract
         run: |
           node experiments/relatte-com5-room-001/cross-repo-test.mjs enterable-song.json
+
+      - name: Room asks for a projected neighbor
+        run: |
+          node experiments/relatte-com5-room-001/make-return-request.mjs enterable-song.json room-request.json particular:listener
+
+      - name: reLATTE re-verifies the requested road
+        working-directory: _relatte
+        run: |
+          npm run --silent follow:room -- ../enterable-bundle.json ../room-request.json > ../destination.json
+
+      - name: Verify fresh destination projection
+        run: |
+          node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('destination.json','utf8'));if(d.subject!=='particular:listener'||d.authority!=='none')process.exit(1);console.log('Full reLATTE → Room → reLATTE round trip passed.')"
