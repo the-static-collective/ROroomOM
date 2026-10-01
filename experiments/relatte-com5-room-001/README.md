@@ -425,3 +425,71 @@ receipt contains no lyric plaintext
 ```
 
 This is the first point where the Magic Lego blocks do not merely coexist on a shelf: **they can perform together without becoming one thing.**
+
+
+## Room 006 — the block remembers being played
+
+Room 006 composes the executable Room Score with the temporal law from Haunted Toaster's Future Rearview Memory Prophecy.
+
+The added gate is:
+
+```text
+PLAYBACK != PREFERENCE
+```
+
+A performance enters Play Memory only after:
+
+```text
+compiled Room Score
+→ actual CONDUCT event
+→ local encounter receipt
+→ explicit human keep / weird / compost verdict
+→ explicit re-open choice
+→ deterministic memory capsule
+```
+
+That memory can be projected both onto the source particular and onto each exact addressed Lego that participated in the score.
+
+The browser workstation now has a **PLAY MEMORY** shelf. Verified memory capsules persist in browser-local storage and survive re-entry. The current particular shows its verified prior performance count and invitation kinds; each song/video/text Lego shows its own addressed play memory.
+
+Before any memory contributes to future pressure, ROroomOM recomputes the capsule SHA-256. Locally altered capsules are excluded.
+
+The current prophecy grammar is invitation-only:
+
+```text
+KEEP    → REPRISE
+WEIRD   → MUTATE_NEARBY
+COMPOST → COMPOST_RESIDUE
+explicit re-open → REOPEN
+3+ witnessed performances → CONTRAST
+```
+
+None of those actions execute automatically.
+
+```text
+RECEIPT != LEARNING
+LEARNING != PROPHECY
+PROPHECY != AUTHORITY
+HUMAN VERDICT != SOURCE AUTHORITY
+MEMORY != SOURCE MUTATION
+REOPEN != REPLAY
+```
+
+See [PLAY_MEMORY_006.md](PLAY_MEMORY_006.md).
+
+### CI proof
+
+Room 006 retains the entire earlier stack and then uses the same real Vault audio descriptor, real filmmaker-accepted Blender video descriptor, and exact lyric bytes to create three actual conducted local scores with explicit human verdicts.
+
+The final contract proves:
+
+- the particular remembers three attributable performances;
+- the exact song Lego independently projects the same three participations;
+- KEEP / WEIRD / COMPOST remain human declarations, not inferred preferences;
+- invitations remain `invitation-only`;
+- a locally forged memory capsule is excluded;
+- memory carries hashes and addressed participation, not lyric plaintext.
+
+This is the first executable version of:
+
+> **The block remembers being played.**
