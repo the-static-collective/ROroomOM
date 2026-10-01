@@ -15,9 +15,11 @@ nav{border-right:1px solid #555}
 .panel{border:1px solid #666;padding:.8rem;margin-bottom:.8rem}
 .block{border:2px solid #aaa;padding:.85rem;margin:.5rem 0;overflow-wrap:anywhere}
 .doors{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.4rem}
-button,input,select{font:inherit}
+button,input,select,textarea{font:inherit}
 button{padding:.55rem .6rem;cursor:pointer}
-input,select{padding:.45rem;width:100%;margin:.3rem 0}
+input,select,textarea{padding:.45rem;width:100%;margin:.3rem 0}
+textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1px solid #666}
+.score-window{min-height:110px;border:1px dashed #777;padding:.75rem;white-space:pre-wrap;margin-top:.6rem}
 .door.active{outline:2px solid currentColor}
 .lego{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.65rem}
 .instrument{border:1px solid #888;padding:.75rem;min-height:160px;overflow-wrap:anywhere}
@@ -67,6 +69,20 @@ input,select{padding:.45rem;width:100%;margin:.3rem 0}
   <div id="deck" class="lego"></div>
 
   <div class="panel">
+    <strong>ROOM SCORE · LOCAL CONDUCTOR</strong>
+    <div id="scoreStatus" class="fog">Resolve audio, video, and an exact Text Sheet before compiling a score.</div>
+    <textarea id="scoreSpec" spellcheck="false" aria-label="Room Score JSON"></textarea>
+    <div class="row">
+      <button id="scoreDraft" disabled>Draft local score</button>
+      <button id="scoreCompile" disabled>Compile score</button>
+      <button id="scoreConduct" disabled>Conduct</button>
+      <button id="scoreStop" disabled>Stop</button>
+    </div>
+    <div id="scoreWindow" class="score-window fog">(lyric window)</div>
+    <p class="fog">The score aligns local renderers only. It does not merge, edit, publish, or re-authorize any source.</p>
+  </div>
+
+  <div class="panel">
     <strong>LOCAL ORGAN DOCK · AUTODISCOGRAPHY VAULT</strong>
     <div id="vaultStatus" class="fog">Vault audio resolver not checked.</div>
     <button id="vaultConnect">Check verified-audio resolver</button>
@@ -108,13 +124,17 @@ input,select{padding:.45rem;width:100%;margin:.3rem 0}
 </div>
 <script type="module">
 import {
+  acceptLocalTextBytes,
   acceptMediaResolution,
   actEncounter,
+  actRoomScore,
+  compileRoomScore,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
   prepareMediaResolution,
+  roomScoreFrame,
   useInstrument
 } from './room.mjs';
 
@@ -123,9 +143,11 @@ let room=null;
 let organTicket=null;
 let vaultConnected=false;
 let blenderConnected=false;
+let scoreAnimation=null;
 
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
+const scoreStatus=q('#scoreStatus'), scoreSpec=q('#scoreSpec'), scoreWindow=q('#scoreWindow');
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
 function saveJson(filename,value){
@@ -167,6 +189,17 @@ async function resolveAudioInstrument(item){
   }
 }
 
+async function resolveTextInstrument(item,file){
+  try{
+    const next=await acceptLocalTextBytes(room,item.localInstrumentId,await file.arrayBuffer());
+    if(next.ok===false){alert(next.explanation);return;}
+    room=next;
+    renderRoom();
+  }catch(error){
+    alert(error.message);
+  }
+}
+
 async function resolveVideoInstrument(item){
   const request=prepareMediaResolution(room,item.localInstrumentId);
   if(request.ok===false){alert(request.explanation);return;}
@@ -200,6 +233,13 @@ function renderNavigator(){
     neighbors.textContent='(none loaded)';
     select.disabled=true;
     q('#navRequest').disabled=true;
+    q('#scoreDraft').disabled=true;
+    q('#scoreCompile').disabled=true;
+    q('#scoreConduct').disabled=true;
+    q('#scoreStop').disabled=true;
+    scoreStatus.className='fog';
+    scoreStatus.textContent='Resolve audio, video, and an exact Text Sheet before compiling a score.';
+    scoreWindow.textContent='(lyric window)';
     return;
   }
 
@@ -231,6 +271,7 @@ function renderNavigator(){
 
 function renderRoom(){
   deck.innerHTML='';
+  stopScorePlayback(false);
   if(!room?.ok){
     encounter.textContent='Choose a door.';
     q('#leave').disabled=true;
@@ -247,7 +288,8 @@ function renderRoom(){
     const card=document.createElement('section');
     card.className='instrument';
     const resolved=room.resolvedMedia?.[item.localInstrumentId] ?? null;
-    if(resolved) card.classList.add('resolved');
+    const resolvedText=room.resolvedText?.[item.localInstrumentId] ?? null;
+    if(resolved || resolvedText) card.classList.add('resolved');
 
     card.innerHTML='<strong>'+esc(item.label)+'</strong><br><span class="fog">'+esc(item.kind)+(item.mediaType?' · '+esc(item.mediaType):'')+'</span><br><small>'+esc(item.sourceRef ?? 'receiver-local structural instrument')+'</small>';
 
@@ -262,12 +304,40 @@ function renderRoom(){
         audio.controls=true;
         audio.preload='metadata';
         audio.src=resolved.playbackUrl;
+        audio.dataset.instrumentId=item.localInstrumentId;
         card.append(audio);
       }else{
         const resolveButton=document.createElement('button');
         resolveButton.textContent=vaultConnected?'Resolve verified audio':'Resolve through Vault';
         resolveButton.onclick=()=>resolveAudioInstrument(item);
         card.append(resolveButton);
+      }
+    }
+
+    if(item.kind==='text-sheet'){
+      if(resolvedText){
+        const meta=document.createElement('p');
+        meta.className='fog';
+        meta.textContent='Exact local text · '+resolvedText.byteLength+' bytes · '+resolvedText.lineCount+' lines · '+resolvedText.sha256.slice(0,12)+'…';
+        card.append(meta);
+
+        const preview=document.createElement('pre');
+        preview.className='log';
+        preview.textContent=resolvedText.text.split(/\r?\n/).slice(0,12).join('\n');
+        card.append(preview);
+      }else{
+        const picker=document.createElement('input');
+        picker.type='file';
+        picker.accept='.txt,.md,text/plain,text/markdown';
+        picker.onchange=()=>{
+          const file=picker.files?.[0];
+          if(file) resolveTextInstrument(item,file);
+        };
+        card.append(picker);
+        const hint=document.createElement('p');
+        hint.className='fog';
+        hint.textContent='Choose local text bytes. They are admitted only if SHA-256 exactly matches this Lego address.';
+        card.append(hint);
       }
     }
 
@@ -283,6 +353,7 @@ function renderRoom(){
         video.preload='metadata';
         video.playsInline=true;
         video.src=resolved.playbackUrl;
+        video.dataset.instrumentId=item.localInstrumentId;
         video.style.width='100%';
         video.style.marginTop='.65rem';
         card.append(video);
@@ -304,6 +375,22 @@ function renderRoom(){
     card.append(use);
     deck.append(card);
   }
+
+  const hasAudio=Boolean(room.resolvedMedia?.['lego:2:audio-player']);
+  const hasVideo=Boolean(room.resolvedMedia?.['lego:4:video-player']);
+  const hasText=Boolean(room.resolvedText?.['lego:3:text-sheet']);
+  const readyForScore=hasAudio && hasVideo && hasText;
+
+  q('#scoreDraft').disabled=!readyForScore;
+  q('#scoreCompile').disabled=!readyForScore;
+  q('#scoreConduct').disabled=!room.roomScore;
+  q('#scoreStop').disabled=!room.roomScore;
+  scoreStatus.className=room.roomScore?'good':(readyForScore?'':'fog');
+  scoreStatus.textContent=room.roomScore
+    ? 'Compiled local Room Score · '+room.roomScore.title+' · authority: none'
+    : readyForScore
+      ? 'All three Lego blocks resolved. Draft or enter an explicit local score.'
+      : 'Resolve audio, video, and an exact Text Sheet before compiling a score.';
 
   q('#leave').disabled=room.phase==='away';
   q('#return').disabled=room.phase!=='away';
@@ -338,6 +425,131 @@ q('#navRequest').onclick=()=>{
 q('#leave').onclick=()=>{const next=actEncounter(room,'LEAVE');if(next.ok){room=next;renderRoom();}};
 q('#return').onclick=()=>{const next=actEncounter(room,'RETURN');if(next.ok){room=next;renderRoom();}};
 q('#receipt').onclick=()=>saveJson('roroomom-relatte-com5-local-receipt.json',exportEncounterReceipt(room));
+
+function draftScore(){
+  if(!room?.ok)return;
+  const lyric=room.resolvedText?.['lego:3:text-sheet'];
+  if(!lyric)return;
+  const lines=lyric.text.split(/\r?\n/);
+  const cues=[];
+  for(let start=0,index=0;start<lines.length;start+=4,index+=1){
+    cues.push({atMs:index*8000,fromLine:start+1,toLine:Math.min(lines.length,start+4)});
+  }
+  scoreSpec.value=JSON.stringify({
+    schema:'roroomom.room-score/v0',
+    title:'Local Room Score',
+    clock:'lego:2:audio-player',
+    mediaTracks:[
+      {instrument:'lego:2:audio-player',offsetMs:0},
+      {instrument:'lego:4:video-player',offsetMs:0}
+    ],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues
+    }
+  },null,2);
+  scoreStatus.className='fog';
+  scoreStatus.textContent='Drafted receiver-local cue times. Edit them, then compile explicitly.';
+}
+
+function mediaNode(id){
+  return document.querySelector('[data-instrument-id="'+CSS.escape(id)+'"]');
+}
+
+function stopScorePlayback(record=true){
+  if(scoreAnimation!==null){
+    cancelAnimationFrame(scoreAnimation);
+    scoreAnimation=null;
+  }
+  document.querySelectorAll('audio[data-instrument-id],video[data-instrument-id]').forEach(node=>node.pause());
+  if(record && room?.roomScore){
+    const next=actRoomScore(room,'STOP');
+    if(next.ok)room=next;
+    q('#scoreConduct').disabled=false;
+    q('#scoreStop').disabled=true;
+    scoreStatus.className='good';
+    scoreStatus.textContent='Room Score stopped locally · source mutation: no';
+    if(room?.ok){
+      log.className='log';
+      log.textContent=room.localHistory.map((item,index)=>String(index+1).padStart(2,'0')+'  '+JSON.stringify(item)).join('\n');
+    }
+  }
+}
+
+async function conductScore(){
+  if(!room?.roomScore)return;
+  stopScorePlayback(false);
+
+  const score=room.roomScore;
+  const clockTrack=score.mediaTracks.find(track=>track.instrument===score.clock);
+  const clock=mediaNode(score.clock);
+  if(!clock || !clockTrack){alert('Room Score clock renderer is not present.');return;}
+
+  for(const track of score.mediaTracks){
+    const node=mediaNode(track.instrument);
+    if(!node){alert('A scored media renderer is not present: '+track.instrument);return;}
+    node.currentTime=track.offsetMs/1000;
+  }
+
+  const next=actRoomScore(room,'CONDUCT');
+  if(next.ok)room=next;
+
+  const plays=score.mediaTracks.map(track=>mediaNode(track.instrument).play());
+  await Promise.allSettled(plays);
+
+  q('#scoreConduct').disabled=true;
+  q('#scoreStop').disabled=false;
+  scoreStatus.className='good';
+  scoreStatus.textContent='Conducting local Room Score · one clock, separate sources';
+
+  const tick=()=>{
+    if(!room?.roomScore)return;
+    const elapsedMs=Math.max(0,clock.currentTime*1000-clockTrack.offsetMs);
+    const frame=roomScoreFrame(room,elapsedMs);
+    if(frame.ok===false){
+      stopScorePlayback(false);
+      scoreStatus.className='fog';
+      scoreStatus.textContent=frame.explanation;
+      return;
+    }
+
+    for(const desired of frame.media){
+      if(desired.instrument===frame.clock)continue;
+      const node=mediaNode(desired.instrument);
+      if(node && Math.abs(node.currentTime-desired.desiredTimeSeconds)>0.35){
+        node.currentTime=desired.desiredTimeSeconds;
+      }
+    }
+
+    scoreWindow.className='score-window';
+    scoreWindow.textContent=frame.lyric?.text ?? '(before first lyric cue)';
+    if(!clock.paused && !clock.ended)scoreAnimation=requestAnimationFrame(tick);
+    else{
+      scoreAnimation=null;
+      q('#scoreConduct').disabled=false;
+      q('#scoreStop').disabled=true;
+    }
+  };
+  scoreAnimation=requestAnimationFrame(tick);
+
+  log.className='log';
+  log.textContent=room.localHistory.map((item,index)=>String(index+1).padStart(2,'0')+'  '+JSON.stringify(item)).join('\n');
+}
+
+q('#scoreDraft').onclick=draftScore;
+q('#scoreCompile').onclick=()=>{
+  try{
+    const next=compileRoomScore(room,JSON.parse(scoreSpec.value));
+    if(next.ok===false){alert(next.explanation);return;}
+    room=next;
+    renderRoom();
+    q('#scoreConduct').disabled=false;
+    scoreStatus.className='good';
+    scoreStatus.textContent='Compiled local Room Score · '+room.roomScore.title+' · authority: none';
+  }catch(error){alert('Invalid Room Score JSON: '+error.message);}
+};
+q('#scoreConduct').onclick=conductScore;
+q('#scoreStop').onclick=()=>stopScorePlayback(true);
 
 q('#vaultConnect').onclick=async()=>{
   try{
