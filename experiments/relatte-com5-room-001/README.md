@@ -360,3 +360,68 @@ Room 004 keeps the complete reLATTE round trip and verified Vault audio proof, t
 10. preserves source mutation = false and distribution authorization = false.
 
 That is the first moving-image organ in the walkable COM⁵ workstation.
+
+
+## Room 005 — the blocks compose together
+
+Room 005 adds the first **Room Score**: a receiver-local temporal composition over already-resolved Magic Lego.
+
+```text
+verified audio
++
+filmmaker-accepted video
++
+exact locally matched text
+        ↓
+explicit Room Score
+        ↓
+one playback clock
++
+media offsets
++
+lyric line cues
+        ↓
+synchronized local encounter
+```
+
+The score is not a new source object and does not collapse the participating particulars.
+
+```text
+ROOM SCORE != SOURCE
+SYNC != MERGER
+CUE != CLAIM
+LOCAL ARRANGEMENT != SOURCE MUTATION
+COMPOSITION != OWNERSHIP
+ONE CLOCK != ONE IDENTITY
+```
+
+The Text Sheet is deliberately receiver-local. A selected UTF-8 text/Markdown file is SHA-256 hashed in the local runtime and accepted only when its exact digest matches the reLATTE media address. The exported encounter receipt records the digest, byte count, line count, cue ranges and media bindings — not the lyric plaintext.
+
+The browser workstation now exposes an editable Room Score surface with **Draft local score**, **Compile score**, **Conduct**, and **Stop**. Draft timing is only a local suggestion. Compilation is explicit and still carries `authority: none`.
+
+See [ROOM_SCORE_005.md](ROOM_SCORE_005.md) for the score contract and laws.
+
+### CI proof
+
+Room 005 retains the full earlier stack and then performs one more composition:
+
+```text
+real Vault resolver descriptor
++
+real Haunted Blender accepted-video descriptor
++
+exact local lyric bytes
+        ↓
+Room Score compilation
+        ↓
+clock frame at 1s
+clock frame at 9s
+        ↓
+video seek offset verified
+lyric cue transition verified
+        ↓
+receipt proves hashes + cues
+receipt contains no lyric plaintext
+```
+
+This is the first point where the Magic Lego blocks do not merely coexist on a shelf: **they can perform together without becoming one thing.**
