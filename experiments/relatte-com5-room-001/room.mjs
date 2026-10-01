@@ -741,3 +741,232 @@ export function actRoomScore(room, action) {
     sharedWorldChanged:false,
   };
 }
+
+
+const PERFORMANCE_MEMORY_SCHEMA = 'roroomom.performance-memory/v0';
+const PERFORMANCE_MEMORY_PROJECTION_SCHEMA = 'roroomom.performance-memory-projection/v0';
+const HUMAN_VERDICTS = new Set(['keep','weird','compost']);
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '['+value.map(canonicalJson).join(',')+']';
+  return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalJson(value[key])).join(',')+'}';
+}
+
+async function hashCanonicalLocal(value) {
+  const bytes=new TextEncoder().encode(canonicalJson(value));
+  return sha256Hex(bytes);
+}
+
+function conducted(room) {
+  return room.localHistory.some(entry=>entry?.type==='ROOM_SCORE_CONDUCT');
+}
+
+function scoredBlocks(room) {
+  const score=room.roomScore;
+  if (!score) return [];
+  const blocks=[];
+  for (const track of score.mediaTracks ?? []) {
+    blocks.push({
+      localInstrumentId:track.instrument,
+      kind:track.kind,
+      sourceRef:track.sourceRef,
+      resolvedSha256:track.resolvedSha256,
+      organ:track.organ,
+    });
+  }
+  const lyric=score.lyricTrack;
+  if (lyric) {
+    blocks.push({
+      localInstrumentId:lyric.instrument,
+      kind:'text-sheet',
+      sourceRef:lyric.sourceRef,
+      resolvedSha256:lyric.resolvedSha256,
+      organ:LOCAL_TEXT_ORGAN,
+    });
+  }
+  return blocks;
+}
+
+export async function createPerformanceMemory(room, humanVerdict) {
+  if (!room?.ok || room.status!=='local-encounter')
+    return fail('room-not-open','Enter a room before making performance memory.');
+  if (!room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score before making performance memory.');
+  if (!conducted(room))
+    return fail('not-performed','A compiled score must actually be conducted before it can become performance memory.');
+  if (!plain(humanVerdict) || !HUMAN_VERDICTS.has(humanVerdict.verdict))
+    return fail('invalid-human-verdict','Performance memory requires explicit keep, weird, or compost.');
+  if (typeof humanVerdict.reopenRequested!=='boolean')
+    return fail('invalid-reopen-choice','Performance memory requires an explicit reopenRequested boolean.');
+
+  const receipt=exportEncounterReceipt(room);
+  if (receipt?.ok===false) return receipt;
+
+  const encounterReceiptSha256=await hashCanonicalLocal(receipt);
+  const blocks=scoredBlocks(room);
+  const fact={
+    sourceSubject:room.sourceSubject,
+    sourceDoor:room.sourceDoor,
+    encounterId:room.encounterId,
+    encounterReceiptSha256,
+    scoreTitle:room.roomScore.title,
+    scoreClock:room.roomScore.clock,
+    scoreMediaTrackCount:room.roomScore.mediaTracks.length,
+    scoreLyricCueCount:room.roomScore.lyricTrack.cues.length,
+    performedBlocks:blocks,
+  };
+
+  const learning={
+    schema:'roroomom.performance-learning/v0',
+    sourceReceiptSha256:encounterReceiptSha256,
+    humanVerdict:humanVerdict.verdict,
+    reopenRequested:humanVerdict.reopenRequested,
+    playedSourceRefs:[...new Set(blocks.map(block=>block.sourceRef))].sort(),
+    instrumentKinds:[...new Set(blocks.map(block=>block.kind))].sort(),
+    authority:'derived-from-receipt-and-explicit-human-verdict',
+  };
+
+  const core={
+    schema:PERFORMANCE_MEMORY_SCHEMA,
+    fact,
+    humanVerdict:{
+      verdict:humanVerdict.verdict,
+      reopenRequested:humanVerdict.reopenRequested,
+      authority:'explicit-human-local-verdict',
+    },
+    learning,
+    boundary:[
+      'PLAYBACK != PREFERENCE',
+      'RECEIPT != LEARNING',
+      'LEARNING != PROPHECY',
+      'HUMAN VERDICT != SOURCE AUTHORITY',
+      'MEMORY != SOURCE MUTATION',
+    ],
+    authority:'none',
+  };
+
+  const memorySha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    memorySha256,
+    memoryId:'memory:'+memorySha256,
+  };
+}
+
+function validPerformanceMemory(memory) {
+  return plain(memory)
+    && memory.schema===PERFORMANCE_MEMORY_SCHEMA
+    && strictText(memory.memorySha256,64)
+    && memory.memoryId==='memory:'+memory.memorySha256
+    && plain(memory.fact)
+    && strictText(memory.fact.sourceSubject,1000)
+    && Array.isArray(memory.fact.performedBlocks)
+    && plain(memory.humanVerdict)
+    && HUMAN_VERDICTS.has(memory.humanVerdict.verdict)
+    && typeof memory.humanVerdict.reopenRequested==='boolean'
+    && plain(memory.learning)
+    && memory.authority==='none';
+}
+
+function memoryMatches(memory,{sourceSubject=null,sourceRef=null}={}) {
+  if (sourceSubject!==null && memory.fact.sourceSubject!==sourceSubject) return false;
+  if (sourceRef!==null && !memory.fact.performedBlocks.some(block=>block.sourceRef===sourceRef)) return false;
+  return sourceSubject!==null || sourceRef!==null;
+}
+
+export function projectPerformanceMemory(memories, selector={}) {
+  if (!Array.isArray(memories))
+    return fail('invalid-memory-ledger','Performance memory ledger must be an array.');
+  if (!plain(selector)
+    || (selector.sourceSubject!==undefined && !strictText(selector.sourceSubject,1000))
+    || (selector.sourceRef!==undefined && !strictText(selector.sourceRef,1000))
+    || (selector.sourceSubject===undefined && selector.sourceRef===undefined))
+    return fail('invalid-memory-selector','Select a sourceSubject and/or sourceRef.');
+
+  const valid=memories.filter(validPerformanceMemory);
+  const selected=valid.filter(memory=>memoryMatches(memory,{
+    sourceSubject:selector.sourceSubject ?? null,
+    sourceRef:selector.sourceRef ?? null,
+  }));
+
+  const verdictCounts={keep:0,weird:0,compost:0};
+  let reopenRequests=0;
+  for (const memory of selected) {
+    verdictCounts[memory.humanVerdict.verdict]+=1;
+    if (memory.humanVerdict.reopenRequested) reopenRequests+=1;
+  }
+
+  const invitations=[];
+  const latest=selected.at(-1) ?? null;
+  if (latest?.humanVerdict.reopenRequested) {
+    invitations.push({
+      kind:'REOPEN',
+      reason:'latest-explicit-human-reopen-request',
+      evidenceRefs:[latest.memoryId],
+      authority:'invitation-only',
+    });
+  }
+  if (verdictCounts.weird>0) {
+    const evidence=selected.filter(memory=>memory.humanVerdict.verdict==='weird').map(memory=>memory.memoryId);
+    invitations.push({
+      kind:'MUTATE_NEARBY',
+      reason:'explicit-weird-verdict-exists',
+      evidenceRefs:evidence.slice(-8),
+      authority:'invitation-only',
+    });
+  }
+  if (verdictCounts.compost>0) {
+    const evidence=selected.filter(memory=>memory.humanVerdict.verdict==='compost').map(memory=>memory.memoryId);
+    invitations.push({
+      kind:'COMPOST_RESIDUE',
+      reason:'explicit-compost-verdict-exists',
+      evidenceRefs:evidence.slice(-8),
+      authority:'invitation-only',
+    });
+  }
+  if (verdictCounts.keep>0) {
+    const evidence=selected.filter(memory=>memory.humanVerdict.verdict==='keep').map(memory=>memory.memoryId);
+    invitations.push({
+      kind:'REPRISE',
+      reason:'explicit-keep-verdict-exists',
+      evidenceRefs:evidence.slice(-8),
+      authority:'invitation-only',
+    });
+  }
+  if (selected.length>=3) {
+    invitations.push({
+      kind:'CONTRAST',
+      reason:'three-or-more-attributable-performances',
+      evidenceRefs:selected.slice(-3).map(memory=>memory.memoryId),
+      authority:'invitation-only',
+    });
+  }
+
+  return {
+    schema:PERFORMANCE_MEMORY_PROJECTION_SCHEMA,
+    selector:{
+      ...(selector.sourceSubject!==undefined ? {sourceSubject:selector.sourceSubject} : {}),
+      ...(selector.sourceRef!==undefined ? {sourceRef:selector.sourceRef} : {}),
+    },
+    playCount:selected.length,
+    verdictCounts,
+    reopenRequests,
+    memoryRefs:selected.map(memory=>memory.memoryId),
+    learningRefs:selected.map(memory=>memory.memorySha256),
+    prophecy:{
+      schema:'roroomom.performance-prophecy/v0',
+      status:'imagined-from-receipt-backed-memory',
+      invitations,
+      authority:'imagined-non-authoritative',
+    },
+    boundary:[
+      'PAST PERFORMANCE != CURRENT TRUTH',
+      'PLAY COUNT != PREFERENCE',
+      'MEMORY PRESSURE != PROGRAMMING AUTHORITY',
+      'PROPHECY != AUTHORITY',
+      'REOPEN != REPLAY',
+    ],
+    authority:'none',
+  };
+}
