@@ -1,1 +1,145 @@
-# Room 007 — Human ↔ AI Crossing Rail\n\nRoom 007 adds the first user-facing human/AI crossing primitive to the COM⁵ workstation.\n\n> The AI is a participant in the Room. It is not the Room, the navigator, or the authority.\n\nThe first slice is intentionally narrow:\n\n    existing compiled Room Score\n       ↓\n    verified Play Memory projection\n       ↓\n    AI participant proposes ONE media timing change\n       ↓\n    visible crossing rail\n       ↓\n    HUMAN: ACCEPT | HOLD | REFUSE\n       ↓\n    local crossing receipt\n\nNothing changes before ACCEPT.\n\n## The proposal must answer five human questions\n\nEvery staged proposal exposes:\n\n1. WHO proposed this?\n2. WHAT did it use?\n3. WHY this?\n4. WHAT will change?\n5. WHAT will not change?\n\nIt also states who decides: the human local encounter.\n\n## First bounded patch\n\nRoom 007 permits one proposal operation only:\n\n    SET_MEDIA_OFFSET_MS\n\nThe proposal may change one already-resolved audio/video track offset from one bounded integer value to another.\n\nIt may not change:\n\n- source subject;\n- any instrument sourceRef;\n- any resolved media SHA-256;\n- lyric sourceRef;\n- lyric cue ranges;\n- reLATTE history;\n- source media bytes.\n\nThat restriction is the point of the first slice. The crossing machinery can be tested without granting a generic agent edit surface.\n\n## Memory influence\n\ncreateAiRoomScoreProposal() independently projects the current receipt-backed Play Memory ledger for the source particular.\n\nThe proposal records:\n\n- verified memory capsule refs;\n- current invitation kinds such as REOPEN, MUTATE_NEARBY, COMPOST_RESIDUE, REPRISE or CONTRAST;\n- memory projection authority;\n- prophecy authority.\n\nMemory may explain why an AI participant offered a mutation.\n\n    MEMORY INFLUENCE != PERMISSION\n\nAn invitation never applies a patch.\n\n## Proposal integrity + stale-score protection\n\nEach proposal gets a deterministic SHA-256 over its semantic core.\n\nBefore any human decision is resolved, ROroomOM:\n\n- recomputes the proposal hash;\n- confirms the proposal targets this source subject and encounter;\n- recomputes the current Room Score hash;\n- refuses if the score changed after proposal creation.\n\nThus:\n\n    EDITED PROPOSAL → REFUSE\n    STALE PRECONDITION → REFUSE\n\n## Human decisions\n\n### HOLD\n\nHOLD records a crossing receipt and changes nothing. A UI may keep the proposal available for a later explicit decision.\n\n### REFUSE\n\nREFUSE records that the human declined this proposal. It changes nothing and does not erase that the proposal occurred.\n\n### ACCEPT\n\nACCEPT re-validates the patch, recompiles only the receiver-local Room Score arrangement, and emits a receipt with:\n\n- proposal id/hash;\n- AI participant identity;\n- human decision;\n- pre-score SHA-256;\n- post-score SHA-256;\n- exact applied patch;\n- changed = true/false.\n\nThe upstream song, video, lyrics, and reLATTE history are untouched.\n\n## Crossing laws\n\n    AI PARTICIPANT != SYSTEM\n    PROMPT != AUTHORITY\n    INTERPRETATION != INTENT\n    PROPOSAL != CONSENT\n    MEMORY INFLUENCE != PERMISSION\n    ACCEPTANCE REQUIRES HUMAN CROSSING\n\n    AI PROPOSAL != HUMAN DECISION\n    HOLD != ACCEPT\n    REFUSE != ERASURE\n    ACCEPT != SOURCE AUTHORITY\n    LOCAL SCORE CHANGE != SOURCE MUTATION\n\n## Why this is the user-facing layer\n\nThe UI does not hide the AI behind a magic button. It makes the crossing itself visible:\n\n    AI PARTICIPANT\n       ↓\n    proposal + basis + limits\n       ↓\n    HUMAN THRESHOLD\n       ↓\n    ACCEPT / HOLD / REFUSE\n       ↓\n    attributable receipt\n\nThis is the first executable form of human/AI cross-crossings in the Static workstation.\n\n## Stable compression\n\n> AI may propose a road inside the Room. The human still crosses it.\n
+# Room 007 — Human ↔ AI Crossing Rail
+
+Room 007 adds the first user-facing human/AI crossing primitive to the COM⁵ workstation.
+
+> The AI is a participant in the Room. It is not the Room, the navigator, or the authority.
+
+The first slice is intentionally narrow:
+
+    existing compiled Room Score
+       ↓
+    verified Play Memory projection
+       ↓
+    AI participant proposes ONE media timing change
+       ↓
+    visible crossing rail
+       ↓
+    HUMAN: ACCEPT | HOLD | REFUSE
+       ↓
+    local crossing receipt
+
+Nothing changes before ACCEPT.
+
+## The proposal must answer five human questions
+
+Every staged proposal exposes:
+
+1. WHO proposed this?
+2. WHAT did it use?
+3. WHY this?
+4. WHAT will change?
+5. WHAT will not change?
+
+It also states who decides: the human local encounter.
+
+## First bounded patch
+
+Room 007 permits one proposal operation only:
+
+    SET_MEDIA_OFFSET_MS
+
+The proposal may change one already-resolved audio/video track offset from one bounded integer value to another.
+
+It may not change:
+
+- source subject;
+- any instrument sourceRef;
+- any resolved media SHA-256;
+- lyric sourceRef;
+- lyric cue ranges;
+- reLATTE history;
+- source media bytes.
+
+That restriction is the point of the first slice. The crossing machinery can be tested without granting a generic agent edit surface.
+
+## Memory influence
+
+createAiRoomScoreProposal() independently projects the current receipt-backed Play Memory ledger for the source particular.
+
+The proposal records:
+
+- verified memory capsule refs;
+- current invitation kinds such as REOPEN, MUTATE_NEARBY, COMPOST_RESIDUE, REPRISE or CONTRAST;
+- memory projection authority;
+- prophecy authority.
+
+Memory may explain why an AI participant offered a mutation.
+
+    MEMORY INFLUENCE != PERMISSION
+
+An invitation never applies a patch.
+
+## Proposal integrity + stale-score protection
+
+Each proposal gets a deterministic SHA-256 over its semantic core.
+
+Before any human decision is resolved, ROroomOM:
+
+- recomputes the proposal hash;
+- confirms the proposal targets this source subject and encounter;
+- recomputes the current Room Score hash;
+- refuses if the score changed after proposal creation.
+
+Thus:
+
+    EDITED PROPOSAL → REFUSE
+    STALE PRECONDITION → REFUSE
+
+## Human decisions
+
+### HOLD
+
+HOLD records a crossing receipt and changes nothing. A UI may keep the proposal available for a later explicit decision.
+
+### REFUSE
+
+REFUSE records that the human declined this proposal. It changes nothing and does not erase that the proposal occurred.
+
+### ACCEPT
+
+ACCEPT re-validates the patch, recompiles only the receiver-local Room Score arrangement, and emits a receipt with:
+
+- proposal id/hash;
+- AI participant identity;
+- human decision;
+- pre-score SHA-256;
+- post-score SHA-256;
+- exact applied patch;
+- changed = true/false.
+
+The upstream song, video, lyrics, and reLATTE history are untouched.
+
+## Crossing laws
+
+    AI PARTICIPANT != SYSTEM
+    PROMPT != AUTHORITY
+    INTERPRETATION != INTENT
+    PROPOSAL != CONSENT
+    MEMORY INFLUENCE != PERMISSION
+    ACCEPTANCE REQUIRES HUMAN CROSSING
+
+    AI PROPOSAL != HUMAN DECISION
+    HOLD != ACCEPT
+    REFUSE != ERASURE
+    ACCEPT != SOURCE AUTHORITY
+    LOCAL SCORE CHANGE != SOURCE MUTATION
+
+## Why this is the user-facing layer
+
+The UI does not hide the AI behind a magic button. It makes the crossing itself visible:
+
+    AI PARTICIPANT
+       ↓
+    proposal + basis + limits
+       ↓
+    HUMAN THRESHOLD
+       ↓
+    ACCEPT / HOLD / REFUSE
+       ↓
+    attributable receipt
+
+This is the first executable form of human/AI cross-crossings in the Static workstation.
+
+## Stable compression
+
+> AI may propose a road inside the Room. The human still crosses it.
