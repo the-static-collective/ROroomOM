@@ -655,3 +655,83 @@ Room 008 retains the full existing reLATTE / Vault / Blender / Room Score / Play
 10. a 501 ms delta beyond the human envelope is refused.
 
 > **The human offers a bounded world. The AI echoes the world it heard. Only then may it propose a road through it.**
+
+
+## Room 009 — Guest Port
+
+Room 009 turns the Human Offer into a portable invitation that may be carried to multiple independently declared AI participants without giving any transport or provider authority over the Room.
+
+```text
+HUMAN OFFER
+→ GUEST PORT PACKET
+→ any transport
+→ GUEST DRAFT
+→ ROroomOM validates + seals
+→ GUEST RESPONSE
+→ import
+→ open ONE crossing
+→ HUMAN ACCEPT / HOLD / REFUSE
+```
+
+The exported packet contains only:
+
+- the current Human Offer id/hash;
+- source subject / encounter / Room Score hash;
+- explicitly offered Lego;
+- current timing values for offered media;
+- permitted actions and timing limit;
+- protected invariants;
+- only the Play Memory permitted by the Human Offer;
+- a simple Guest Draft contract.
+
+An outside model does not need to calculate ROroomOM hashes. It can return `roroomom.guest-response-draft/v0`; ROroomOM validates the draft against the exported capability envelope and seals it locally into a deterministic Guest Response.
+
+The first slice intentionally treats guest participant identity as declared metadata:
+
+```text
+DECLARED PARTICIPANT != VERIFIED PROVIDER IDENTITY
+```
+
+Provider-authenticated adapters can be added later without changing the crossing grammar.
+
+Multiple responses remain separate:
+
+```text
+SAME OFFER != SAME INTERPRETATION
+MULTIPLE ECHOES != CONSENSUS
+AGREEMENT != TRUTH
+DISAGREEMENT != FAILURE
+PROPOSAL SET != DECISION
+```
+
+The workstation now has a **GUEST PORT** panel:
+
+1. create one packet from the current Human Offer;
+2. export it as JSON;
+3. carry it through any external transport;
+4. import one or more plain Guest Draft or sealed Guest Response files;
+5. inspect each guest separately;
+6. **Open this crossing** for exactly one proposal;
+7. use the existing Human ACCEPT / HOLD / REFUSE rail.
+
+Import reconstructs the expected Guest Port packet from the current Room, Human Offer and permitted memory ledger. If any of that bounded world changed, the old packet is stale and cannot create a consequential proposal.
+
+See [GUEST_PORT_009.md](GUEST_PORT_009.md).
+
+### CI proof
+
+Room 009 retains the entire earlier reLATTE / media / Room Score / Play Memory / Offer-Echo-Cross stack and then proves:
+
+1. one current Human Offer exposes WEIRD memory but withholds KEEP;
+2. one deterministic Guest Port packet is created;
+3. Guest A returns a +250 ms timing proposal;
+4. Guest B returns a +500 ms timing proposal;
+5. Guest C returns an Echo with no proposal;
+6. all three remain separate in a non-authoritative response projection;
+7. Guest B alone is opened into the Human Decision rail;
+8. HOLD changes nothing;
+9. ACCEPT changes only the receiver-local timing;
+10. Guest A and Guest C remain historical sibling responses;
+11. the accepted score change makes the old Guest Port packet stale for further consequential imports.
+
+> **A Guest Port lets many minds approach the same bounded world without pretending they became one mind.**
