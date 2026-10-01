@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 005 living Room Score contract
+name: reLATTE COM5 Room 006 play-memory contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-005-room-score
+      - experiment/relatte-com5-room-006-play-memory
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -244,6 +244,13 @@ jobs:
           the picture keeps its own
           EOF
           node experiments/relatte-com5-room-001/room-score-contract.mjs \
+            vault-descriptor.json \
+            blender-descriptor.json \
+            room-score-lyrics.txt
+
+      - name: Turn real performed score into verified Play Memory
+        run: |
+          node experiments/relatte-com5-room-001/play-memory-contract.mjs \
             vault-descriptor.json \
             blender-descriptor.json \
             room-score-lyrics.txt
