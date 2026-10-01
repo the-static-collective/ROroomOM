@@ -986,3 +986,245 @@ export async function projectPerformanceMemory(memories, selector={}) {
     authority:'none',
   };
 }
+
+
+const AI_PROPOSAL_SCHEMA='roroomom.ai-room-score-proposal/v0';
+const HUMAN_AI_RECEIPT_SCHEMA='roroomom.human-ai-crossing-receipt/v0';
+const HUMAN_AI_DECISIONS=new Set(['ACCEPT','HOLD','REFUSE']);
+
+async function roomScoreSha256(room) {
+  if (!room?.roomScore) throw new Error('ROOM_SCORE_REQUIRED');
+  return hashCanonicalLocal(room.roomScore);
+}
+
+function validAiParticipant(value) {
+  return plain(value)
+    && strictText(value.id,200)
+    && (value.label===undefined || strictText(value.label,200))
+    && (value.provider===undefined || strictText(value.provider,200))
+    && (value.model===undefined || strictText(value.model,200));
+}
+
+function validOffsetPatch(room, patch) {
+  if (!plain(patch)
+    || patch.op!=='SET_MEDIA_OFFSET_MS'
+    || !strictText(patch.instrument,500)
+    || !boundedInteger(patch.value,0,600000))
+    return false;
+  return room.roomScore?.mediaTracks?.some(track=>track.instrument===patch.instrument) ?? false;
+}
+
+async function verifiedProposalCore(proposal) {
+  if (!plain(proposal)
+    || proposal.schema!==AI_PROPOSAL_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(proposal.proposalSha256 ?? '')
+    || proposal.proposalId!=='proposal:'+proposal.proposalSha256
+    || proposal.authority!=='proposal-only')
+    return null;
+
+  const core={
+    schema:proposal.schema,
+    participant:proposal.participant,
+    target:proposal.target,
+    basis:proposal.basis,
+    rationale:proposal.rationale,
+    patch:proposal.patch,
+    changes:proposal.changes,
+    invariants:proposal.invariants,
+    authority:proposal.authority,
+    boundary:proposal.boundary,
+  };
+  return await hashCanonicalLocal(core)===proposal.proposalSha256 ? core : null;
+}
+
+export async function createAiRoomScoreProposal(room, memories, spec) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score before an AI participant may propose a change.');
+  if (!Array.isArray(memories))
+    return fail('invalid-memory-ledger','AI proposal basis requires a memory ledger array.');
+  if (!plain(spec) || !validAiParticipant(spec.participant))
+    return fail('invalid-ai-participant','AI proposal requires an explicit bounded participant identity.');
+  if (!strictText(spec.rationale,1000))
+    return fail('invalid-ai-rationale','AI proposal requires a bounded rationale.');
+  if (!validOffsetPatch(room,spec.patch))
+    return fail('invalid-ai-patch','First crossing slice allows one bounded media-offset patch only.');
+
+  const scoreSha256=await roomScoreSha256(room);
+  const memoryProjection=await projectPerformanceMemory(memories,{
+    sourceSubject:room.sourceSubject,
+  });
+  if (memoryProjection.ok===false) return memoryProjection;
+
+  const current=room.roomScore.mediaTracks.find(track=>track.instrument===spec.patch.instrument);
+  if (!current) return fail('invalid-ai-patch','Target media track is absent.');
+
+  const core={
+    schema:AI_PROPOSAL_SCHEMA,
+    participant:{
+      type:'ai-participant',
+      id:spec.participant.id,
+      ...(spec.participant.label!==undefined ? {label:spec.participant.label} : {}),
+      ...(spec.participant.provider!==undefined ? {provider:spec.participant.provider} : {}),
+      ...(spec.participant.model!==undefined ? {model:spec.participant.model} : {}),
+    },
+    target:{
+      sourceSubject:room.sourceSubject,
+      encounterId:room.encounterId,
+      roomScoreSha256:scoreSha256,
+      roomScoreTitle:room.roomScore.title,
+    },
+    basis:{
+      sourceRefs:[...new Set(scoredBlocks(room).map(block=>block.sourceRef))].sort(),
+      memoryRefs:[...memoryProjection.memoryRefs],
+      memoryInvitations:memoryProjection.prophecy.invitations.map(item=>({
+        kind:item.kind,
+        evidenceRefs:[...item.evidenceRefs],
+        authority:item.authority,
+      })),
+      memoryAuthority:memoryProjection.authority,
+      prophecyAuthority:memoryProjection.prophecy.authority,
+    },
+    rationale:spec.rationale,
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:spec.patch.instrument,
+      fromValue:current.offsetMs,
+      value:spec.patch.value,
+    },
+    changes:[
+      {
+        field:`roomScore.mediaTracks[${spec.patch.instrument}].offsetMs`,
+        from:current.offsetMs,
+        to:spec.patch.value,
+      },
+    ],
+    invariants:[
+      'sourceSubject',
+      'instrument sourceRef',
+      'resolved media sha256',
+      'lyric sourceRef',
+      'lyric cue ranges',
+      'reLATTE history',
+      'source media bytes',
+    ],
+    authority:'proposal-only',
+    boundary:[
+      'AI PARTICIPANT != SYSTEM',
+      'PROMPT != AUTHORITY',
+      'INTERPRETATION != INTENT',
+      'PROPOSAL != CONSENT',
+      'MEMORY INFLUENCE != PERMISSION',
+      'ACCEPTANCE REQUIRES HUMAN CROSSING',
+    ],
+  };
+
+  const proposalSha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    proposalSha256,
+    proposalId:'proposal:'+proposalSha256,
+  };
+}
+
+export async function resolveHumanAiCrossing(room, proposal, decision) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','A Room Score must exist before resolving an AI crossing.');
+  if (!HUMAN_AI_DECISIONS.has(decision))
+    return fail('invalid-human-decision','Human crossing decision must be ACCEPT, HOLD, or REFUSE.');
+
+  const core=await verifiedProposalCore(proposal);
+  if (!core)
+    return fail('invalid-ai-proposal','AI proposal failed deterministic integrity verification.');
+  if (proposal.target.sourceSubject!==room.sourceSubject
+    || proposal.target.encounterId!==room.encounterId)
+    return fail('proposal-target-mismatch','AI proposal targets a different Room encounter.');
+
+  const preScoreSha256=await roomScoreSha256(room);
+  if (proposal.target.roomScoreSha256!==preScoreSha256)
+    return fail('stale-ai-proposal','Room Score changed after the AI proposal was created.');
+
+  let nextRoom=room;
+  let postScoreSha256=preScoreSha256;
+
+  if (decision==='ACCEPT') {
+    if (!validOffsetPatch(room,{
+      op:proposal.patch.op,
+      instrument:proposal.patch.instrument,
+      value:proposal.patch.value,
+    }))
+      return fail('invalid-ai-patch','AI proposal patch is no longer valid for this Room Score.');
+
+    const spec={
+      schema:ROOM_SCORE_SCHEMA,
+      title:room.roomScore.title,
+      clock:room.roomScore.clock,
+      mediaTracks:room.roomScore.mediaTracks.map(track=>({
+        instrument:track.instrument,
+        offsetMs:track.instrument===proposal.patch.instrument
+          ? proposal.patch.value
+          : track.offsetMs,
+      })),
+      lyricTrack:{
+        instrument:room.roomScore.lyricTrack.instrument,
+        cues:room.roomScore.lyricTrack.cues.map(cue=>({
+          atMs:cue.atMs,
+          fromLine:cue.fromLine,
+          toLine:cue.toLine,
+        })),
+      },
+    };
+
+    nextRoom=compileRoomScore(room,spec);
+    if (nextRoom.ok===false) return nextRoom;
+    postScoreSha256=await roomScoreSha256(nextRoom);
+  }
+
+  const receiptCore={
+    schema:HUMAN_AI_RECEIPT_SCHEMA,
+    proposalId:proposal.proposalId,
+    proposalSha256:proposal.proposalSha256,
+    participant:proposal.participant,
+    sourceSubject:room.sourceSubject,
+    encounterId:room.encounterId,
+    decision,
+    preScoreSha256,
+    postScoreSha256,
+    changed:decision==='ACCEPT' && preScoreSha256!==postScoreSha256,
+    appliedPatch:decision==='ACCEPT' ? clone(proposal.patch) : null,
+    authority:'human-local-decision',
+    boundary:[
+      'AI PROPOSAL != HUMAN DECISION',
+      'HOLD != ACCEPT',
+      'REFUSE != ERASURE',
+      'ACCEPT != SOURCE AUTHORITY',
+      'LOCAL SCORE CHANGE != SOURCE MUTATION',
+    ],
+  };
+  const receiptSha256=await hashCanonicalLocal(receiptCore);
+  const crossingReceipt={
+    ...receiptCore,
+    receiptSha256,
+    receiptId:'human-ai-crossing:'+receiptSha256,
+  };
+
+  nextRoom={
+    ...nextRoom,
+    localHistory:[
+      ...nextRoom.localHistory,
+      {
+        type:`HUMAN_AI_${decision}`,
+        proposalId:proposal.proposalId,
+        crossingReceiptId:crossingReceipt.receiptId,
+        changed:crossingReceipt.changed,
+      },
+    ],
+    sourceMutated:false,
+    sharedWorldChanged:false,
+  };
+
+  return {
+    ok:true,
+    room:nextRoom,
+    crossingReceipt,
+  };
+}
