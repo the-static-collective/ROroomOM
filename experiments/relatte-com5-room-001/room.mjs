@@ -1539,7 +1539,7 @@ export async function createGuestPortPacket(room, memories, offer) {
   };
 }
 
-async function verifiedGuestPortPacket(room, offer, packet) {
+async function verifiedGuestPortPacket(room, memories, offer, packet) {
   if (!plain(packet)
     || packet.schema!==GUEST_PORT_SCHEMA
     || !/^[a-f0-9]{64}$/.test(packet.guestPortSha256 ?? '')
@@ -1557,13 +1557,14 @@ async function verifiedGuestPortPacket(room, offer, packet) {
   };
   if (await hashCanonicalLocal(core)!==packet.guestPortSha256) return null;
   const offerCore=await verifiedHumanOffer(room,offer);
-  if (!offerCore) return null;
-  if (packet.port?.sourceSubject!==room.sourceSubject
-    || packet.port?.encounterId!==room.encounterId
-    || packet.port?.roomScoreSha256!==await roomScoreSha256(room)
-    || packet.port?.humanOfferId!==offer.offerId
-    || packet.port?.humanOfferSha256!==offer.offerSha256)
+  if (!offerCore || !Array.isArray(memories)) return null;
+
+  const expected=await createGuestPortPacket(room,memories,offer);
+  if (expected.ok===false
+    || expected.guestPortSha256!==packet.guestPortSha256
+    || expected.guestPortId!==packet.guestPortId)
     return null;
+
   return core;
 }
 
@@ -1689,8 +1690,8 @@ async function verifiedGuestResponse(packet,response) {
   return await hashCanonicalLocal(core)===response.responseSha256;
 }
 
-export async function importGuestPortResponse(room, offer, packet, response) {
-  const packetCore=await verifiedGuestPortPacket(room,offer,packet);
+export async function importGuestPortResponse(room, memories, offer, packet, response) {
+  const packetCore=await verifiedGuestPortPacket(room,memories,offer,packet);
   if (!packetCore)
     return fail('invalid-guest-port','Guest Port packet is stale, altered, or bound to another Room.');
   if (!await verifiedGuestResponse(packet,response))
