@@ -177,6 +177,8 @@ export function enterDoor(navigator, role, approved, localId=null) {
     sourceNeighbors:[...navigator.neighbors],
     instrumentDeck,
     resolvedMedia:{},
+    resolvedText:{},
+    roomScore:null,
     phase:'entered',
     localHistory:[{
       type:'ENTER_DOOR',
@@ -254,6 +256,22 @@ export function exportEncounterReceipt(room) {
     })),
     localHistory:clone(room.localHistory),
     resolvedMedia:clone(room.resolvedMedia ?? {}),
+    resolvedText:Object.fromEntries(
+      Object.entries(room.resolvedText ?? {}).map(([id,item])=>[
+        id,
+        {
+          organ:item.organ,
+          status:item.status,
+          address:item.address,
+          sha256:item.sha256,
+          mediaType:item.mediaType,
+          byteLength:item.byteLength,
+          lineCount:item.lineCount,
+          authority:'none',
+        },
+      ]),
+    ),
+    roomScore:room.roomScore ? clone(room.roomScore) : null,
     sourceAuthority:'none',
     destinationDisposition:'held',
     sourceMutated:false,
@@ -262,6 +280,8 @@ export function exportEncounterReceipt(room) {
       'ROOM RECEIPT != reLATTE RECEIPT',
       'LOCAL ENCOUNTER != SOURCE IDENTITY',
       'INSTRUMENT USE != SOURCE MUTATION',
+      'ROOM SCORE != SOURCE',
+      'SYNC != MERGER',
     ],
   };
 }
@@ -409,5 +429,289 @@ export function acceptMediaResolution(room, localInstrumentId, resolution) {
     ],
     sourceMutated:false,
     sharedWorldChanged:false,
+  };
+}
+
+
+const ROOM_SCORE_SCHEMA = 'roroomom.room-score/v0';
+const LOCAL_TEXT_ORGAN = 'roroomom.local-addressed-text/v0';
+
+function bytesOf(value) {
+  if (typeof value === 'string') return new TextEncoder().encode(value);
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value))
+    return new Uint8Array(value.buffer,value.byteOffset,value.byteLength);
+  return null;
+}
+
+async function sha256Hex(bytes) {
+  if (!globalThis.crypto?.subtle)
+    throw new Error('WEBCRYPTO_UNAVAILABLE');
+  const digest=await globalThis.crypto.subtle.digest('SHA-256',bytes);
+  return [...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
+}
+
+export function prepareTextResolution(room, localInstrumentId) {
+  if (!room?.ok || room.status !== 'local-encounter' || !Array.isArray(room.instrumentDeck))
+    return fail('room-not-open','Enter a COM5 door before resolving text.');
+  if (room.phase === 'away')
+    return fail('away','Return to the room before resolving text.');
+
+  const instrument=room.instrumentDeck.find(item=>item.localInstrumentId===localInstrumentId);
+  if (!instrument)
+    return fail('unknown-instrument','Instrument is not in this local deck.');
+  if (instrument.kind !== 'text-sheet')
+    return fail('not-text-sheet','Only text-sheet instruments accept local addressed text bytes.');
+  if (typeof instrument.sourceRef !== 'string' || !SHA_ADDRESS.test(instrument.sourceRef))
+    return fail('unaddressed-text','Text resolution requires a sha256 content address.');
+  if (!['text/plain','text/markdown'].includes(instrument.mediaType))
+    return fail('unsupported-text-type','Text Sheet accepts plain text or Markdown only.');
+
+  return {
+    schema:'roroomom.local-text-resolution-request/v0',
+    localInstrumentId,
+    address:instrument.sourceRef,
+    expectedMediaType:instrument.mediaType,
+    authority:'none',
+    boundary:[
+      'LOCAL FILE != SOURCE AUTHORITY',
+      'TEXT BYTES MUST MATCH ADDRESS',
+      'DISPLAY != SOURCE MUTATION',
+    ],
+  };
+}
+
+export async function acceptLocalTextBytes(room, localInstrumentId, suppliedBytes) {
+  const request=prepareTextResolution(room,localInstrumentId);
+  if (request.ok===false) return request;
+
+  const bytes=bytesOf(suppliedBytes);
+  if (!bytes || bytes.byteLength===0 || bytes.byteLength>262144)
+    return fail('invalid-text-bytes','Text Sheet bytes must be between 1 byte and 256 KiB.');
+
+  let text;
+  try {
+    text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  } catch {
+    return fail('invalid-text-encoding','Text Sheet must be valid UTF-8.');
+  }
+  if (text.includes('\u0000'))
+    return fail('invalid-text-content','Text Sheet may not contain NUL bytes.');
+
+  let digest;
+  try {
+    digest=await sha256Hex(bytes);
+  } catch {
+    return fail('digest-unavailable','SHA-256 is unavailable in this local runtime.');
+  }
+
+  const match=SHA_ADDRESS.exec(request.address);
+  if (!match || digest!==match[1])
+    return fail('text-address-mismatch','Local text bytes do not match the Text Sheet address.');
+
+  const lineCount=text.split(/\r?\n/).length;
+  const accepted={
+    organ:LOCAL_TEXT_ORGAN,
+    status:'resolved-exact-local-text',
+    address:request.address,
+    sha256:digest,
+    mediaType:request.expectedMediaType,
+    byteLength:bytes.byteLength,
+    lineCount,
+    text,
+    authority:'none',
+  };
+
+  return {
+    ...room,
+    resolvedText:{
+      ...(room.resolvedText ?? {}),
+      [localInstrumentId]:accepted,
+    },
+    localHistory:[
+      ...room.localHistory,
+      {
+        type:'TEXT_RESOLVED',
+        localInstrumentId,
+        address:accepted.address,
+        organ:accepted.organ,
+      },
+    ],
+    sourceMutated:false,
+    sharedWorldChanged:false,
+  };
+}
+
+function boundedInteger(value,min,max) {
+  return Number.isInteger(value) && value>=min && value<=max;
+}
+
+function scoreInstrument(room,id,kind=null) {
+  const instrument=room.instrumentDeck.find(item=>item.localInstrumentId===id);
+  if (!instrument) return null;
+  if (kind && instrument.kind!==kind) return null;
+  return instrument;
+}
+
+export function compileRoomScore(room, spec) {
+  if (!room?.ok || room.status !== 'local-encounter')
+    return fail('room-not-open','Enter a COM5 door before compiling a Room Score.');
+  if (room.phase === 'away')
+    return fail('away','Return to the room before compiling a Room Score.');
+  if (!plain(spec) || spec.schema!==ROOM_SCORE_SCHEMA)
+    return fail('invalid-score','Expected roroomom.room-score/v0.');
+  if (!strictText(spec.title,200))
+    return fail('invalid-score-title','Room Score requires a bounded title.');
+  if (!strictText(spec.clock,500))
+    return fail('invalid-score-clock','Room Score requires one local media clock.');
+  if (!Array.isArray(spec.mediaTracks) || spec.mediaTracks.length<1 || spec.mediaTracks.length>8)
+    return fail('invalid-media-tracks','Room Score requires 1-8 media tracks.');
+
+  const clockInstrument=scoreInstrument(room,spec.clock);
+  if (!clockInstrument || !['audio-player','video-player'].includes(clockInstrument.kind))
+    return fail('invalid-score-clock','Room Score clock must be an audio or video Lego.');
+  if (!room.resolvedMedia?.[spec.clock])
+    return fail('unresolved-score-clock','Room Score clock media must be resolved first.');
+
+  const seen=new Set();
+  const mediaTracks=[];
+  for (const track of spec.mediaTracks) {
+    if (!plain(track)
+      || !strictText(track.instrument,500)
+      || !boundedInteger(track.offsetMs,-600000,600000)
+      || seen.has(track.instrument))
+      return fail('invalid-media-track','Room Score media track is malformed or duplicated.');
+
+    const instrument=scoreInstrument(room,track.instrument);
+    const resolved=room.resolvedMedia?.[track.instrument];
+    if (!instrument || !['audio-player','video-player'].includes(instrument.kind) || !resolved)
+      return fail('unresolved-media-track','Every Room Score media track must already be resolved.');
+
+    seen.add(track.instrument);
+    mediaTracks.push({
+      instrument:track.instrument,
+      kind:instrument.kind,
+      sourceRef:instrument.sourceRef,
+      resolvedSha256:resolved.sha256,
+      organ:resolved.organ,
+      offsetMs:track.offsetMs,
+    });
+  }
+  if (!seen.has(spec.clock))
+    return fail('clock-not-in-tracks','Room Score clock must also be a media track.');
+
+  if (!plain(spec.lyricTrack)
+    || !strictText(spec.lyricTrack.instrument,500)
+    || !Array.isArray(spec.lyricTrack.cues)
+    || spec.lyricTrack.cues.length<1
+    || spec.lyricTrack.cues.length>500)
+    return fail('invalid-lyric-track','Room Score requires one bounded lyric cue track.');
+
+  const lyricInstrument=scoreInstrument(room,spec.lyricTrack.instrument,'text-sheet');
+  const lyric=room.resolvedText?.[spec.lyricTrack.instrument];
+  if (!lyricInstrument || !lyric)
+    return fail('unresolved-lyric-track','Room Score lyric Text Sheet must be resolved first.');
+
+  let previous=-1;
+  const cues=[];
+  for (const cue of spec.lyricTrack.cues) {
+    if (!plain(cue)
+      || !boundedInteger(cue.atMs,0,24*60*60*1000)
+      || cue.atMs<previous
+      || !boundedInteger(cue.fromLine,1,lyric.lineCount)
+      || !boundedInteger(cue.toLine,cue.fromLine,lyric.lineCount))
+      return fail('invalid-lyric-cue','Lyric cues must be ordered and address existing line ranges.');
+
+    previous=cue.atMs;
+    cues.push({
+      atMs:cue.atMs,
+      fromLine:cue.fromLine,
+      toLine:cue.toLine,
+    });
+  }
+
+  const compiled={
+    schema:ROOM_SCORE_SCHEMA,
+    status:'compiled-local-arrangement',
+    title:spec.title,
+    clock:spec.clock,
+    mediaTracks,
+    lyricTrack:{
+      instrument:spec.lyricTrack.instrument,
+      sourceRef:lyricInstrument.sourceRef,
+      resolvedSha256:lyric.sha256,
+      lineCount:lyric.lineCount,
+      cues,
+    },
+    authority:'none',
+    boundary:[
+      'ROOM SCORE != SOURCE',
+      'SYNC != MERGER',
+      'CUE != CLAIM',
+      'LOCAL ARRANGEMENT != SOURCE MUTATION',
+      'COMPOSITION != OWNERSHIP',
+    ],
+  };
+
+  return {
+    ...room,
+    roomScore:compiled,
+    localHistory:[
+      ...room.localHistory,
+      {
+        type:'ROOM_SCORE_COMPILED',
+        title:compiled.title,
+        clock:compiled.clock,
+        mediaTrackCount:compiled.mediaTracks.length,
+        lyricCueCount:compiled.lyricTrack.cues.length,
+      },
+    ],
+    sourceMutated:false,
+    sharedWorldChanged:false,
+  };
+}
+
+export function roomScoreFrame(room, elapsedMs) {
+  if (!room?.ok || !room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score first.');
+  if (!Number.isFinite(elapsedMs) || elapsedMs<0 || elapsedMs>24*60*60*1000)
+    return fail('invalid-score-time','Room Score time must be a bounded nonnegative number.');
+
+  const score=room.roomScore;
+  const lyric=room.resolvedText?.[score.lyricTrack.instrument];
+  if (!lyric || lyric.sha256!==score.lyricTrack.resolvedSha256)
+    return fail('stale-lyric-resolution','Resolved lyric bytes changed after score compilation.');
+
+  for (const track of score.mediaTracks) {
+    const resolved=room.resolvedMedia?.[track.instrument];
+    if (!resolved || resolved.sha256!==track.resolvedSha256 || resolved.organ!==track.organ)
+      return fail('stale-media-resolution','Resolved media changed after score compilation.');
+  }
+
+  let activeCue=null;
+  for (const cue of score.lyricTrack.cues) {
+    if (cue.atMs<=elapsedMs) activeCue=cue;
+    else break;
+  }
+
+  const lines=lyric.text.split(/\r?\n/);
+  const lyricFrame=activeCue ? {
+    ...activeCue,
+    text:lines.slice(activeCue.fromLine-1,activeCue.toLine).join('\n'),
+  } : null;
+
+  return {
+    ok:true,
+    status:'room-score-frame',
+    elapsedMs,
+    clock:score.clock,
+    media:score.mediaTracks.map(track=>({
+      instrument:track.instrument,
+      kind:track.kind,
+      desiredTimeSeconds:Math.max(0,(elapsedMs+track.offsetMs)/1000),
+      sourceRef:track.sourceRef,
+    })),
+    lyric:lyricFrame,
+    authority:'none',
   };
 }
