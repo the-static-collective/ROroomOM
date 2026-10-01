@@ -39,7 +39,7 @@ Choose **Load specimen** or import a JSON packet emitted by a compatible reLATTE
 To generate one from reLATTE PR #14:
 
 ```bash
-npm run enter:song > /tmp/enterable-song.json
+npm run --silent enter:song > /tmp/enterable-song.json
 ```
 
 Then import that JSON into the Room page.
