@@ -179,13 +179,13 @@ test('Vault resolver cannot substitute another audio address',()=>{
   assert.equal(refused.code,'media-resolution-mismatch');
 });
 
-test('non-audio Lego block cannot use first Vault audio resolver',()=>{
+test('unsupported Lego block has no media resolver',()=>{
   const nav=openNavigator(fixture);
   const room=enterDoor(nav,'COMPOSE',true,'room-encounter:not-audio');
   const request=prepareMediaResolution(room,'lego:3:text-sheet');
 
   assert.equal(request.ok,false);
-  assert.equal(request.code,'not-audio-instrument');
+  assert.equal(request.code,'no-media-resolver');
 });
 
 
