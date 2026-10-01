@@ -187,3 +187,62 @@ test('non-audio Lego block cannot use first Vault audio resolver',()=>{
   assert.equal(request.ok,false);
   assert.equal(request.code,'not-audio-instrument');
 });
+
+
+test('video resolution request selects the Haunted Blender organ',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:video-resolve');
+  const request=prepareMediaResolution(room,'lego:4:video-player');
+
+  assert.equal(request.schema,'roroomom.media-resolution-request/v0');
+  assert.equal(request.instrumentKind,'video-player');
+  assert.equal(request.address,'sha256:'+'3'.repeat(64));
+  assert.equal(request.expectedOrgan,'haunted-blender.accepted-video-resolver-v0');
+  assert.deepEqual(request.expectedStatuses,['resolved-filmmaker-accepted-private-take']);
+  assert.deepEqual(request.expectedMediaTypes,['video/mp4']);
+});
+
+test('matching Haunted Blender acceptance upgrades only the local Video Window',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:video-accept');
+  const digest='3'.repeat(64);
+
+  const next=acceptMediaResolution(room,'lego:4:video-player',{
+    organ:'haunted-blender.accepted-video-resolver-v0',
+    status:'resolved-filmmaker-accepted-private-take',
+    address:'sha256:'+digest,
+    sha256:digest,
+    mediaType:'video/mp4',
+    byteLength:8192,
+    playbackUrl:'http://127.0.0.1:13704/v0/media/'+digest,
+    distributionAuthorized:false,
+    authority:'none',
+  });
+
+  assert.equal(next.ok,true);
+  assert.equal(next.resolvedMedia['lego:4:video-player'].sha256,digest);
+  assert.equal(next.resolvedMedia['lego:4:video-player'].distributionAuthorized,false);
+  assert.equal(next.sourceMutated,false);
+  assert.equal(next.sharedWorldChanged,false);
+});
+
+test('candidate status cannot masquerade as accepted Video Window media',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:video-candidate');
+  const digest='3'.repeat(64);
+
+  const refused=acceptMediaResolution(room,'lego:4:video-player',{
+    organ:'haunted-blender.accepted-video-resolver-v0',
+    status:'candidate_admitted_not_filmmaker_accepted',
+    address:'sha256:'+digest,
+    sha256:digest,
+    mediaType:'video/mp4',
+    byteLength:8192,
+    playbackUrl:'http://127.0.0.1:13704/v0/media/'+digest,
+    distributionAuthorized:false,
+    authority:'none',
+  });
+
+  assert.equal(refused.ok,false);
+  assert.equal(refused.code,'media-resolution-mismatch');
+});
