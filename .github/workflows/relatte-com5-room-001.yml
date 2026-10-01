@@ -44,7 +44,7 @@ jobs:
         working-directory: _relatte
         run: |
           npm install
-          npm run enter:song > ../enterable-song.json
+          npm run --silent enter:song > ../enterable-song.json
 
       - name: Cross-repo producer consumer contract
         run: |
