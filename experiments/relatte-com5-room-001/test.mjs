@@ -945,7 +945,7 @@ test('Guest Port exports one transport-neutral bounded world',async()=>{
 test('independent guests can return different echoes and proposals for the same packet',async()=>{
   const {packet}=await guestPortFixture();
 
-  const guestA=await createGuestPortResponse(packet,{
+  const guestA=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{
       type:'ai-participant',
       id:'ai:guest-a',
@@ -963,7 +963,7 @@ test('independent guests can return different echoes and proposals for the same 
     },
   });
 
-  const guestB=await createGuestPortResponse(packet,{
+  const guestB=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{
       type:'ai-participant',
       id:'ai:guest-b',
@@ -1001,7 +1001,7 @@ test('same guest proposal value from multiple guests does not collapse into cons
 
   const responses=[];
   for(const id of ['ai:same-a','ai:same-b']){
-    responses.push(await createGuestPortResponse(packet,{
+    responses.push(await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
       participant:{type:'ai-participant',id},
       understanding:'Offer the same bounded timing option independently.',
       uncertainties:[],
@@ -1025,7 +1025,7 @@ test('same guest proposal value from multiple guests does not collapse into cons
 test('guest response can enter one human decision crossing without affecting sibling guests',async()=>{
   const {room,memories,offer,packet}=await guestPortFixture();
 
-  const guestA=await createGuestPortResponse(packet,{
+  const guestA=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{type:'ai-participant',id:'ai:guest-open-a'},
     understanding:'Offer one bounded timing shift.',
     uncertainties:[],
@@ -1036,7 +1036,7 @@ test('guest response can enter one human decision crossing without affecting sib
       rationale:'Try a 250 ms later video entrance.',
     },
   });
-  const guestB=await createGuestPortResponse(packet,{
+  const guestB=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{type:'ai-participant',id:'ai:guest-open-b'},
     understanding:'Offer another bounded timing shift.',
     uncertainties:[],
@@ -1079,7 +1079,7 @@ test('guest response can enter one human decision crossing without affecting sib
 test('tampered guest response is excluded and cannot be imported',async()=>{
   const {room,memories,offer,packet}=await guestPortFixture();
 
-  const response=await createGuestPortResponse(packet,{
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{type:'ai-participant',id:'ai:guest-tamper'},
     understanding:'Bounded timing suggestion.',
     uncertainties:[],
@@ -1104,7 +1104,7 @@ test('tampered guest response is excluded and cannot be imported',async()=>{
 
 test('changed permitted memory makes an exported Guest Port stale on import',async()=>{
   const {room,memories,offer,packet}=await guestPortFixture();
-  const response=await createGuestPortResponse(packet,{
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{type:'ai-participant',id:'ai:guest-stale-memory'},
     understanding:'Respond to the exported bounded memory view.',
     uncertainties:[],
@@ -1133,7 +1133,7 @@ test('changed permitted memory makes an exported Guest Port stale on import',asy
 test('Guest Port refuses proposal beyond human envelope before response exists',async()=>{
   const {packet}=await guestPortFixture();
 
-  const response=await createGuestPortResponse(packet,{
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
     participant:{type:'ai-participant',id:'ai:guest-too-far'},
     understanding:'Attempt a timing change beyond the exported capability envelope.',
     uncertainties:[],
