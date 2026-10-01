@@ -9,7 +9,9 @@ import {
   actEncounter,
   actRoomScore,
   compileRoomScore,
+  createAiOfferEcho,
   createAiRoomScoreProposal,
+  createHumanOffer,
   createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
@@ -687,4 +689,221 @@ test('first AI crossing slice refuses source-changing patches',async()=>{
 
   assert.equal(result.ok,false);
   assert.equal(result.code,'invalid-ai-patch');
+});
+
+
+async function offerEchoFixture({
+  memoryEnabled=true,
+  allowedVerdicts=['weird'],
+  maxOffsetDeltaMs=500,
+  offeredInstruments=['lego:2:audio-player','lego:4:video-player','lego:3:text-sheet'],
+}={}){
+  const room=await performedScoreRoom({encounterId:'room-encounter:offer-echo'});
+  const weird=await createPerformanceMemory(room,{verdict:'weird',reopenRequested:true});
+  const keep=await createPerformanceMemory(
+    {...room,encounterId:'room-encounter:offer-echo-keep'},
+    {verdict:'keep',reopenRequested:false},
+  );
+  const memories=[weird,keep];
+
+  const offer=await createHumanOffer(room,{
+    intent:'Make this stranger without replacing any source. Prior WEIRD memory may influence timing proposals.',
+    offeredInstruments,
+    allowedActions:[
+      'INSPECT_ROOM_SCORE',
+      ...(memoryEnabled ? ['READ_PLAY_MEMORY'] : []),
+      'PROPOSE_MEDIA_OFFSET_MS',
+    ],
+    memoryPolicy:{
+      enabled:memoryEnabled,
+      allowedVerdicts:memoryEnabled ? allowedVerdicts : [],
+    },
+    maxOffsetDeltaMs,
+  });
+
+  const echo=await createAiOfferEcho(room,memories,offer,{
+    participant:{
+      id:'ai:offer-echo-assistant',
+      label:'Offer Echo Assistant',
+      provider:'local-specimen',
+      model:'echo-v0',
+    },
+    understanding:'I may inspect the offered Room Score, use only explicitly invited Play Memory, and propose at most one bounded media timing adjustment. I may not replace sources, alter lyrics, publish, or navigate elsewhere.',
+    uncertainties:['The human has not specified whether the video should lead or trail the chorus beyond the permitted offset range.'],
+  });
+
+  return {room,memories,weird,keep,offer,echo};
+}
+
+test('human offer is hashed permission envelope rather than a command',async()=>{
+  const {room,offer}=await offerEchoFixture();
+
+  assert.equal(offer.schema,'roroomom.human-offer/v0');
+  assert.equal(offer.authority,'human-local-offer');
+  assert.equal(offer.target.sourceSubject,room.sourceSubject);
+  assert.match(offer.offerSha256,/^[a-f0-9]{64}$/);
+  assert.equal(offer.offerId,'human-offer:'+offer.offerSha256);
+  assert.ok(offer.capabilities.allowedActions.includes('PROPOSE_MEDIA_OFFSET_MS'));
+  assert.equal(offer.capabilities.maxOffsetDeltaMs,500);
+  assert.deepEqual(offer.memoryPolicy.allowedVerdicts,['weird']);
+  assert.ok(offer.protected.includes('source media bytes'));
+  assert.ok(offer.boundary.includes('REQUEST != PERMISSION'));
+  assert.ok(offer.boundary.includes('SILENCE != CONSENT'));
+});
+
+test('AI echo sees only memory verdict classes explicitly invited by the human offer',async()=>{
+  const {weird,keep,echo}=await offerEchoFixture();
+
+  assert.equal(echo.schema,'roroomom.ai-offer-echo/v0');
+  assert.equal(echo.authority,'echo-only');
+  assert.deepEqual(echo.memoryObserved.allowedVerdicts,['weird']);
+  assert.deepEqual(echo.memoryObserved.memoryRefs,[weird.memoryId]);
+  assert.equal(echo.memoryObserved.memoryRefs.includes(keep.memoryId),false);
+  assert.ok(echo.memoryObserved.invitations.some(item=>item.kind==='MUTATE_NEARBY'));
+  assert.equal(echo.memoryObserved.invitations.some(item=>item.kind==='REPRISE'),false);
+  assert.ok(echo.boundary.includes('ECHO != INTENT'));
+});
+
+test('memory available but not invited remains absent from AI echo',async()=>{
+  const {echo}=await offerEchoFixture({memoryEnabled:false});
+
+  assert.equal(echo.memoryObserved.enabled,false);
+  assert.deepEqual(echo.memoryObserved.memoryRefs,[]);
+  assert.deepEqual(echo.memoryObserved.invitations,[]);
+});
+
+test('offer-bound AI proposal cites offer and echo and only offered material',async()=>{
+  const {room,memories,offer,echo}=await offerEchoFixture();
+  const proposal=await createAiRoomScoreProposal(room,memories,{
+    participant:echo.participant,
+    rationale:'Use the invited WEIRD memory as context and delay only the offered video by 500 ms.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+    },
+    crossing:{offer,echo},
+  });
+
+  assert.equal(proposal.crossingContext.humanOfferId,offer.offerId);
+  assert.equal(proposal.crossingContext.aiEchoId,echo.echoId);
+  assert.deepEqual(proposal.basis.memoryRefs,echo.memoryObserved.memoryRefs);
+  assert.ok(proposal.basis.memoryInvitations.some(item=>item.kind==='MUTATE_NEARBY'));
+  assert.deepEqual(
+    proposal.basis.sourceRefs,
+    [...new Set(offer.offered.map(block=>block.sourceRef))].sort(),
+  );
+  assert.equal(proposal.authority,'proposal-only');
+});
+
+test('AI proposal cannot exceed human timing limit or touch unoffered material',async()=>{
+  const limited=await offerEchoFixture({
+    maxOffsetDeltaMs:200,
+    offeredInstruments:['lego:4:video-player'],
+  });
+
+  const tooFar=await createAiRoomScoreProposal(limited.room,limited.memories,{
+    participant:limited.echo.participant,
+    rationale:'Try a change outside the offered timing envelope.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+    },
+    crossing:{offer:limited.offer,echo:limited.echo},
+  });
+  assert.equal(tooFar.ok,false);
+  assert.equal(tooFar.code,'proposal-exceeds-offer-limit');
+
+  const other=await offerEchoFixture({
+    offeredInstruments:['lego:4:video-player'],
+  });
+  const unoffered=await createAiRoomScoreProposal(other.room,other.memories,{
+    participant:other.echo.participant,
+    rationale:'Try to alter audio that was not offered.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:2:audio-player',
+      value:100,
+    },
+    crossing:{offer:other.offer,echo:other.echo},
+  });
+  assert.equal(unoffered.ok,false);
+  assert.equal(unoffered.code,'instrument-not-offered');
+});
+
+test('edited offer and echo capsules cannot authorize a proposal',async()=>{
+  const {room,memories,offer,echo}=await offerEchoFixture();
+
+  const forgedOffer=structuredClone(offer);
+  forgedOffer.capabilities.maxOffsetDeltaMs=999999;
+  const badEcho=await createAiOfferEcho(room,memories,forgedOffer,{
+    participant:echo.participant,
+    understanding:'Attempt to echo a forged offer.',
+    uncertainties:[],
+  });
+  assert.equal(badEcho.ok,false);
+  assert.equal(badEcho.code,'invalid-human-offer');
+
+  const forgedEcho=structuredClone(echo);
+  forgedEcho.capabilitiesHeard.maxOffsetDeltaMs=999999;
+  const proposal=await createAiRoomScoreProposal(room,memories,{
+    participant:echo.participant,
+    rationale:'Attempt to propose through a forged echo.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+    },
+    crossing:{offer,echo:forgedEcho},
+  });
+  assert.equal(proposal.ok,false);
+  assert.equal(proposal.code,'invalid-ai-echo');
+});
+
+test('human offer goes stale if the Room Score changes before AI echo',async()=>{
+  const {room,memories,offer,echo}=await offerEchoFixture();
+  const changed=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:room.roomScore.title,
+    clock:room.roomScore.clock,
+    mediaTracks:room.roomScore.mediaTracks.map(track=>({
+      instrument:track.instrument,
+      offsetMs:track.instrument==='lego:4:video-player' ? 300 : track.offsetMs,
+    })),
+    lyricTrack:{
+      instrument:room.roomScore.lyricTrack.instrument,
+      cues:room.roomScore.lyricTrack.cues.map(cue=>({...cue})),
+    },
+  });
+
+  const result=await createAiOfferEcho(changed,memories,offer,{
+    participant:echo.participant,
+    understanding:'Attempt to echo an offer tied to an older score.',
+    uncertainties:[],
+  });
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'invalid-human-offer');
+});
+
+test('accepted offer-echo proposal receipt preserves the full crossing lineage',async()=>{
+  const {room,memories,offer,echo}=await offerEchoFixture();
+  const proposal=await createAiRoomScoreProposal(room,memories,{
+    participant:echo.participant,
+    rationale:'Bounded timing proposal within the human offer.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+    },
+    crossing:{offer,echo},
+  });
+
+  const result=await resolveHumanAiCrossing(room,proposal,'ACCEPT');
+  assert.equal(result.ok,true);
+  assert.equal(result.crossingReceipt.crossingContext.humanOfferId,offer.offerId);
+  assert.equal(result.crossingReceipt.crossingContext.aiEchoId,echo.echoId);
+  assert.equal(result.crossingReceipt.decision,'ACCEPT');
+  assert.equal(result.crossingReceipt.changed,true);
+  assert.equal(result.room.sourceMutated,false);
 });
