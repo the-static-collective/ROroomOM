@@ -493,3 +493,85 @@ The final contract proves:
 This is the first executable version of:
 
 > **The block remembers being played.**
+
+
+## Room 007 — human ↔ AI crossing rail
+
+Room 007 makes the AI a visible participant rather than an invisible system-wide authority.
+
+The first crossing is intentionally narrow:
+
+```text
+compiled Room Score
+→ verified Play Memory
+→ AI proposes ONE media timing change
+→ visible basis / rationale / diff / invariants
+→ HUMAN: ACCEPT | HOLD | REFUSE
+→ attributable crossing receipt
+```
+
+Nothing changes when the proposal is created.
+
+The proposal must visibly answer:
+
+```text
+WHO proposed this?
+WHAT did it use?
+WHY this?
+WHAT will change?
+WHAT will not change?
+WHO decides?
+```
+
+The first allowed patch is only:
+
+```text
+SET_MEDIA_OFFSET_MS
+```
+
+for one already-resolved media track. Source refs, resolved hashes, lyric addresses/cues, reLATTE history, and source bytes are declared invariants.
+
+Every proposal carries a deterministic proposal hash plus the current Room Score SHA-256 as a precondition. Edited proposals and stale proposals are refused.
+
+The workstation now renders a **HUMAN ↔ AI CROSSING RAIL** with a staged proposal card and explicit:
+
+```text
+ACCEPT
+HOLD
+REFUSE
+```
+
+Each decision produces a local crossing receipt. HOLD and REFUSE are attributable non-actions; ACCEPT recompiles only the local Room Score arrangement.
+
+```text
+AI PARTICIPANT != SYSTEM
+PROMPT != AUTHORITY
+INTERPRETATION != INTENT
+PROPOSAL != CONSENT
+MEMORY INFLUENCE != PERMISSION
+ACCEPTANCE REQUIRES HUMAN CROSSING
+
+AI PROPOSAL != HUMAN DECISION
+HOLD != ACCEPT
+REFUSE != ERASURE
+ACCEPT != SOURCE AUTHORITY
+LOCAL SCORE CHANGE != SOURCE MUTATION
+```
+
+See [HUMAN_AI_CROSSING_007.md](HUMAN_AI_CROSSING_007.md).
+
+### CI proof
+
+Room 007 keeps the entire reLATTE → organs → Room Score → Play Memory stack, then:
+
+1. conducts a real score backed by the real Vault/Blender test descriptors and exact lyric bytes;
+2. records an explicit WEIRD + re-open memory;
+3. lets an identified AI participant see that verified memory invitation;
+4. proposes only a bounded video timing shift;
+5. proves the Room Score remains unchanged before a human decision;
+6. HOLDs it and proves no score mutation;
+7. ACCEPTs the held proposal and proves only the intended local offset changes;
+8. proves all source refs and resolved SHA-256 identities remain identical;
+9. stages another proposal and REFUSEs it without change.
+
+This is the first executable human/AI cross-crossing in the workstation.

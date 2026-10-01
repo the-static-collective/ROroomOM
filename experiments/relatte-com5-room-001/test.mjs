@@ -9,6 +9,7 @@ import {
   actEncounter,
   actRoomScore,
   compileRoomScore,
+  createAiRoomScoreProposal,
   createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
@@ -17,6 +18,7 @@ import {
   prepareMediaResolution,
   prepareTextResolution,
   projectPerformanceMemory,
+  resolveHumanAiCrossing,
   roomScoreFrame,
   useInstrument,
 } from './room.mjs';
@@ -540,4 +542,149 @@ test('three witnessed performances may invite contrast but never trigger it',asy
   assert.ok(projection.prophecy.invitations.some(item=>item.kind==='CONTRAST'));
   assert.ok(projection.prophecy.invitations.every(item=>item.authority==='invitation-only'));
   assert.equal(projection.authority,'none');
+});
+
+
+async function aiCrossingFixture(){
+  const room=await performedScoreRoom({encounterId:'room-encounter:human-ai'});
+  const memory=await createPerformanceMemory(room,{
+    verdict:'weird',
+    reopenRequested:true,
+  });
+  const memories=[memory];
+  const proposal=await createAiRoomScoreProposal(room,memories,{
+    participant:{
+      id:'ai:room-score-assistant',
+      label:'Room Score Assistant',
+      provider:'local-specimen',
+      model:'bounded-proposer-v0',
+    },
+    rationale:'The prior explicit WEIRD verdict invites a nearby timing mutation; move only the accepted video 500 ms later while preserving all addressed sources.',
+    patch:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+    },
+  });
+  return {room,memory,memories,proposal};
+}
+
+test('AI participant proposal exposes basis change invariants and proposal-only authority',async()=>{
+  const {room,memory,proposal}=await aiCrossingFixture();
+
+  assert.equal(proposal.schema,'roroomom.ai-room-score-proposal/v0');
+  assert.equal(proposal.participant.type,'ai-participant');
+  assert.equal(proposal.authority,'proposal-only');
+  assert.equal(proposal.target.sourceSubject,room.sourceSubject);
+  assert.equal(proposal.patch.op,'SET_MEDIA_OFFSET_MS');
+  assert.equal(proposal.patch.fromValue,250);
+  assert.equal(proposal.patch.value,750);
+  assert.deepEqual(proposal.changes,[{
+    field:'roomScore.mediaTracks[lego:4:video-player].offsetMs',
+    from:250,
+    to:750,
+  }]);
+  assert.ok(proposal.invariants.includes('instrument sourceRef'));
+  assert.ok(proposal.invariants.includes('resolved media sha256'));
+  assert.ok(proposal.basis.memoryRefs.includes(memory.memoryId));
+  assert.ok(proposal.basis.memoryInvitations.some(item=>item.kind==='MUTATE_NEARBY'));
+  assert.equal(proposal.basis.prophecyAuthority,'imagined-non-authoritative');
+  assert.match(proposal.proposalSha256,/^[a-f0-9]{64}$/);
+});
+
+test('memory influence can create a proposal but cannot execute it',async()=>{
+  const {room,proposal}=await aiCrossingFixture();
+
+  assert.equal(room.roomScore.mediaTracks.find(track=>track.instrument==='lego:4:video-player').offsetMs,250);
+  assert.equal(proposal.patch.value,750);
+  assert.equal(room.localHistory.some(item=>item?.type==='HUMAN_AI_ACCEPT'),false);
+});
+
+test('human ACCEPT applies only the bounded Room Score patch and emits receipt',async()=>{
+  const {room,proposal}=await aiCrossingFixture();
+  const beforeSources=room.roomScore.mediaTracks.map(track=>track.sourceRef);
+  const beforeHashes=room.roomScore.mediaTracks.map(track=>track.resolvedSha256);
+
+  const result=await resolveHumanAiCrossing(room,proposal,'ACCEPT');
+  assert.equal(result.ok,true);
+
+  const after=result.room;
+  const video=after.roomScore.mediaTracks.find(track=>track.instrument==='lego:4:video-player');
+  assert.equal(video.offsetMs,750);
+  assert.deepEqual(after.roomScore.mediaTracks.map(track=>track.sourceRef),beforeSources);
+  assert.deepEqual(after.roomScore.mediaTracks.map(track=>track.resolvedSha256),beforeHashes);
+  assert.deepEqual(after.roomScore.lyricTrack.cues,room.roomScore.lyricTrack.cues);
+  assert.equal(after.sourceMutated,false);
+  assert.equal(after.sharedWorldChanged,false);
+
+  assert.equal(result.crossingReceipt.decision,'ACCEPT');
+  assert.equal(result.crossingReceipt.changed,true);
+  assert.notEqual(result.crossingReceipt.preScoreSha256,result.crossingReceipt.postScoreSha256);
+  assert.equal(result.crossingReceipt.appliedPatch.value,750);
+  assert.equal(result.crossingReceipt.authority,'human-local-decision');
+  assert.ok(after.localHistory.some(item=>item?.type==='HUMAN_AI_ACCEPT'));
+});
+
+test('human HOLD and REFUSE are attributable non-actions',async()=>{
+  const {room,proposal}=await aiCrossingFixture();
+
+  for(const decision of ['HOLD','REFUSE']){
+    const result=await resolveHumanAiCrossing(room,proposal,decision);
+    assert.equal(result.ok,true);
+    assert.equal(result.crossingReceipt.decision,decision);
+    assert.equal(result.crossingReceipt.changed,false);
+    assert.equal(result.crossingReceipt.appliedPatch,null);
+    assert.equal(result.crossingReceipt.preScoreSha256,result.crossingReceipt.postScoreSha256);
+    assert.deepEqual(result.room.roomScore,room.roomScore);
+    assert.ok(result.room.localHistory.some(item=>item?.type===`HUMAN_AI_${decision}`));
+  }
+});
+
+test('AI proposal cannot be accepted after Room Score precondition changes',async()=>{
+  const {room,proposal}=await aiCrossingFixture();
+
+  const changed=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:room.roomScore.title,
+    clock:room.roomScore.clock,
+    mediaTracks:room.roomScore.mediaTracks.map(track=>({
+      instrument:track.instrument,
+      offsetMs:track.instrument==='lego:4:video-player' ? 500 : track.offsetMs,
+    })),
+    lyricTrack:{
+      instrument:room.roomScore.lyricTrack.instrument,
+      cues:room.roomScore.lyricTrack.cues.map(cue=>({...cue})),
+    },
+  });
+
+  const result=await resolveHumanAiCrossing(changed,proposal,'ACCEPT');
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'stale-ai-proposal');
+  assert.equal(changed.roomScore.mediaTracks.find(track=>track.instrument==='lego:4:video-player').offsetMs,500);
+});
+
+test('edited AI proposal fails integrity verification',async()=>{
+  const {room,proposal}=await aiCrossingFixture();
+  const forged=structuredClone(proposal);
+  forged.patch.value=9999;
+
+  const result=await resolveHumanAiCrossing(room,forged,'ACCEPT');
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'invalid-ai-proposal');
+});
+
+test('first AI crossing slice refuses source-changing patches',async()=>{
+  const room=await performedScoreRoom({encounterId:'room-encounter:ai-source-refuse'});
+  const result=await createAiRoomScoreProposal(room,[],{
+    participant:{id:'ai:test'},
+    rationale:'Try to replace a source.',
+    patch:{
+      op:'REPLACE_SOURCE_REF',
+      instrument:'lego:4:video-player',
+      value:'sha256:'+'9'.repeat(64),
+    },
+  });
+
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'invalid-ai-patch');
 });
