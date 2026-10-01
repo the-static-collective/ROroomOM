@@ -1,0 +1,174 @@
+{
+  "schema": "relatte.enterable-particular/v0",
+  "subject": "relatte-crossing-v0:demo-media-particular",
+  "projection_status": "derived-non-authoritative",
+  "authority": "none",
+  "doors": [
+    {
+      "role": "COMPOST",
+      "observations": [],
+      "instruments": [
+        {
+          "kind": "residual-shelf",
+          "source": "door",
+          "ref": null,
+          "media_type": null,
+          "note": "Local renderer proposal for the COMPOST door; not protocol authority."
+        }
+      ]
+    },
+    {
+      "role": "COMPOSE",
+      "observations": [
+        {
+          "role": "COMPOSE",
+          "subject": "relatte-crossing-v0:demo-media-particular",
+          "relation": "declared-relation",
+          "evidence_refs": [
+            "particular:demo-song",
+            "world:studio"
+          ]
+        }
+      ],
+      "instruments": [
+        {
+          "kind": "relation-board",
+          "source": "door",
+          "ref": null,
+          "media_type": null,
+          "note": "Local renderer proposal for the COMPOSE door; not protocol authority."
+        },
+        {
+          "kind": "audio-player",
+          "source": "media",
+          "ref": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "media_type": "audio/mpeg",
+          "note": "Declared payload role: song."
+        },
+        {
+          "kind": "text-sheet",
+          "source": "media",
+          "ref": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "media_type": "text/plain",
+          "note": "Declared payload role: lyrics."
+        },
+        {
+          "kind": "video-player",
+          "source": "media",
+          "ref": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "media_type": "video/mp4",
+          "note": "Declared payload role: video."
+        },
+        {
+          "kind": "image-viewer",
+          "source": "media",
+          "ref": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "media_type": "image/png",
+          "note": "Declared payload role: cover."
+        }
+      ]
+    },
+    {
+      "role": "COMPUTE",
+      "observations": [
+        {
+          "role": "COMPUTE",
+          "subject": "relatte-crossing-v0:demo-media-particular",
+          "relation": "receiver-receipt:VERIFIED",
+          "evidence_refs": [
+            "particular:listener"
+          ]
+        }
+      ],
+      "instruments": [
+        {
+          "kind": "receipt-console",
+          "source": "door",
+          "ref": null,
+          "media_type": null,
+          "note": "Local renderer proposal for the COMPUTE door; not protocol authority."
+        }
+      ]
+    },
+    {
+      "role": "COMMUTE",
+      "observations": [
+        {
+          "role": "COMMUTE",
+          "subject": "relatte-crossing-v0:demo-media-particular",
+          "relation": "receiver-signed-receipt-at",
+          "evidence_refs": [
+            "world:listening-room",
+            "particular:listener"
+          ]
+        }
+      ],
+      "instruments": [
+        {
+          "kind": "road-map",
+          "source": "door",
+          "ref": null,
+          "media_type": null,
+          "note": "Local renderer proposal for the COMMUTE door; not protocol authority."
+        }
+      ]
+    },
+    {
+      "role": "COMMUNE",
+      "observations": [],
+      "instruments": [
+        {
+          "kind": "participation-room",
+          "source": "door",
+          "ref": null,
+          "media_type": null,
+          "note": "Local renderer proposal for the COMMUNE door; not protocol authority."
+        }
+      ]
+    }
+  ],
+  "neighbor_refs": [
+    "particular:demo-song",
+    "world:studio",
+    "world:listening-room",
+    "particular:listener"
+  ],
+  "media_refs": [
+    {
+      "address": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "role": "song",
+      "media_type": "audio/mpeg",
+      "source_crossing_id": "relatte-crossing-v0:demo-media-particular"
+    },
+    {
+      "address": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "role": "lyrics",
+      "media_type": "text/plain",
+      "source_crossing_id": "relatte-crossing-v0:demo-media-particular"
+    },
+    {
+      "address": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "role": "video",
+      "media_type": "video/mp4",
+      "source_crossing_id": "relatte-crossing-v0:demo-media-particular"
+    },
+    {
+      "address": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "role": "cover",
+      "media_type": "image/png",
+      "source_crossing_id": "relatte-crossing-v0:demo-media-particular"
+    }
+  ],
+  "encounter": null,
+  "history_cut": {
+    "accepted_record_count": 2,
+    "rejected_record_count": 0
+  },
+  "boundary": [
+    "PROJECTION != AUTHORITY",
+    "DOOR != CROSSING",
+    "MEDIA REF != MEDIA CONTENT",
+    "ROOM RENDERING != SOURCE MUTATION",
+    "RECEIVER ENCOUNTER != SOURCE IDENTITY"
+  ]
+}

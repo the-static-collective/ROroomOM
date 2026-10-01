@@ -1,0 +1,51 @@
+name: reLATTE COM5 Room 001 contract
+
+on:
+  push:
+    branches:
+      - experiment/relatte-com5-room-001
+    paths:
+      - 'experiments/relatte-com5-room-001/**'
+      - '.github/workflows/relatte-com5-room-001.yml'
+  pull_request:
+    paths:
+      - 'experiments/relatte-com5-room-001/**'
+      - '.github/workflows/relatte-com5-room-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  receiver-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ROroomOM
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run local receiver contract
+        run: |
+          node --check experiments/relatte-com5-room-001/room.mjs
+          node --check experiments/relatte-com5-room-001/test.mjs
+          node --test experiments/relatte-com5-room-001/test.mjs
+
+      - name: Checkout reLATTE producer branch
+        uses: actions/checkout@v4
+        with:
+          repository: the-static-collective/reLATTE
+          ref: feat/enterable-particular
+          path: _relatte
+
+      - name: Produce real enterable particular
+        working-directory: _relatte
+        run: |
+          npm install
+          npm run --silent enter:song > ../enterable-song.json
+
+      - name: Cross-repo producer consumer contract
+        run: |
+          node experiments/relatte-com5-room-001/cross-repo-test.mjs enterable-song.json
