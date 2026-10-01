@@ -575,3 +575,83 @@ Room 007 keeps the entire reLATTE → organs → Room Score → Play Memory stac
 9. stages another proposal and REFUSEs it without change.
 
 This is the first executable human/AI cross-crossing in the workstation.
+
+
+## Room 008 — Offer / Echo / Cross
+
+Room 008 closes the reciprocal half of the user-facing crossing rail.
+
+```text
+HUMAN OFFER
+→ AI ECHO
+→ AI PROPOSAL
+→ HUMAN ACCEPT / HOLD / REFUSE
+→ crossing receipt
+```
+
+The Human Offer is a deterministic capability envelope bound to the current Room Score. It makes visible:
+
+- intent;
+- offered song/video/text Lego;
+- allowed actions;
+- whether Play Memory may be read;
+- which KEEP / WEIRD / COMPOST verdict classes are visible;
+- maximum timing delta;
+- protected invariants.
+
+The AI cannot jump directly from natural-language intent to a proposal. An identified participant must first emit an **AI Echo** describing what it understood, which capabilities it heard, which material it sees, which memory it was allowed to observe, what is protected, and what remains uncertain.
+
+Only then can an offer-bound proposal be staged.
+
+```text
+REQUEST != PERMISSION
+INTENT != INTERPRETATION
+ECHO != INTENT
+INTERPRETATION != AUTHORITY
+MEMORY AVAILABLE != MEMORY INVITED
+PROPOSAL != CONSENT
+SILENCE != CONSENT
+ACCEPTANCE REQUIRES HUMAN CROSSING
+```
+
+The Room itself gates memory visibility. If KEEP and WEIRD memories exist but the Human Offer permits WEIRD only, the AI Echo and resulting proposal receive only the verified WEIRD view.
+
+Offer-bound proposals are additionally checked against:
+
+- Human Offer hash;
+- AI Echo hash;
+- current Room Score hash;
+- participant identity;
+- offered instruments;
+- permitted action;
+- maximum timing delta.
+
+The final Human↔AI decision receipt carries the Human Offer and AI Echo lineage alongside the proposal and pre/post score hashes.
+
+The visible rail now has four explicit stages:
+
+```text
+1 HUMAN → OFFER
+2 AI → ECHO
+3 AI → PROPOSAL
+4 HUMAN → DECISION
+```
+
+See [OFFER_ECHO_CROSS_008.md](OFFER_ECHO_CROSS_008.md).
+
+### CI proof
+
+Room 008 retains the full existing reLATTE / Vault / Blender / Room Score / Play Memory stack, then proves:
+
+1. a performed Room has both WEIRD and KEEP receipt-backed memories;
+2. the Human Offer explicitly invites WEIRD only;
+3. the AI Echo sees WEIRD and cannot cite KEEP;
+4. a proposal binds the exact Human Offer and AI Echo hashes;
+5. its material basis is limited to explicitly offered Lego;
+6. a 500 ms timing proposal fits the explicit human limit;
+7. HOLD changes nothing;
+8. ACCEPT changes only the receiver-local video timing;
+9. source refs, resolved SHA-256 values, lyric cues and source mutation state remain unchanged;
+10. a 501 ms delta beyond the human envelope is refused.
+
+> **The human offers a bounded world. The AI echoes the world it heard. Only then may it propose a road through it.**
