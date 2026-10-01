@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 004 playable media contract
+name: reLATTE COM5 Room 005 living Room Score contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-004-video-window
+      - experiment/relatte-com5-room-005-room-score
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -222,6 +222,19 @@ jobs:
         run: |
           node experiments/relatte-com5-room-001/video-resolution-contract.mjs \
             "$(tr -d '\n' < blender-address.txt)" blender-descriptor.json
+
+      - name: Compose exact audio + video + lyric bytes into Room Score
+        run: |
+          cat > room-score-lyrics.txt <<'EOF'
+          The room opens
+          without swallowing the road
+          The song keeps its name
+          the picture keeps its own
+          EOF
+          node experiments/relatte-com5-room-001/room-score-contract.mjs \
+            vault-descriptor.json \
+            blender-descriptor.json \
+            room-score-lyrics.txt
 
       - name: Stop temporary media resolvers
         if: always()
