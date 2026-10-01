@@ -578,7 +578,7 @@ export function compileRoomScore(room, spec) {
   for (const track of spec.mediaTracks) {
     if (!plain(track)
       || !strictText(track.instrument,500)
-      || !boundedInteger(track.offsetMs,-600000,600000)
+      || !boundedInteger(track.offsetMs,0,600000)
       || seen.has(track.instrument))
       return fail('invalid-media-track','Room Score media track is malformed or duplicated.');
 
@@ -713,5 +713,31 @@ export function roomScoreFrame(room, elapsedMs) {
     })),
     lyric:lyricFrame,
     authority:'none',
+  };
+}
+
+
+export function actRoomScore(room, action) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score before conducting it.');
+  if (!['CONDUCT','STOP'].includes(action))
+    return fail('unsupported-score-action','Room Score supports CONDUCT and STOP only.');
+  if (room.phase==='away')
+    return fail('away','Return to the room before conducting its score.');
+  if (room.localHistory.length>=100)
+    return fail('trace-full','Export the local encounter before adding more actions.');
+
+  return {
+    ...room,
+    localHistory:[
+      ...room.localHistory,
+      {
+        type:action==='CONDUCT'?'ROOM_SCORE_CONDUCT':'ROOM_SCORE_STOP',
+        title:room.roomScore.title,
+        clock:room.roomScore.clock,
+      },
+    ],
+    sourceMutated:false,
+    sharedWorldChanged:false,
   };
 }
