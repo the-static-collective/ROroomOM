@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 003 verified media contract
+name: reLATTE COM5 Room 004 playable media contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-003-audio-resolver
+      - experiment/relatte-com5-room-004-video-window
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -27,6 +27,16 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Run local Room contract
         run: |
           node --check experiments/relatte-com5-room-001/room.mjs
@@ -37,8 +47,10 @@ jobs:
         run: |
           python3 -m unittest experiments/relatte-com5-room-001/test_workbench_organ.py -v
           python3 -m unittest experiments/relatte-com5-room-001/test_vault_media_organ.py -v
+          python3 -m unittest experiments/relatte-com5-room-001/test_blender_video_organ.py -v
           python3 -m py_compile experiments/relatte-com5-room-001/workbench_organ.py
           python3 -m py_compile experiments/relatte-com5-room-001/vault_media_organ.py
+          python3 -m py_compile experiments/relatte-com5-room-001/blender_video_organ.py
           python3 -m py_compile experiments/relatte-com5-room-001/organ_bridge.py
 
       - name: Checkout reLATTE round-trip branch
@@ -97,64 +109,126 @@ jobs:
             Buffer.from('RIFF','ascii'),
             Buffer.alloc(4),
             Buffer.from('WAVE','ascii'),
-            Buffer.from('room-003-playable-audio')
+            Buffer.from('room-004-playable-audio')
           ]);
-          fs.writeFileSync('/tmp/room003-stage.wav',bytes);
+          fs.writeFileSync('/tmp/room004-stage.wav',bytes);
           NODE
           node _vault/scripts/admit-staged-asset.js \
-            --staged-file /tmp/room003-stage.wav \
-            --vault-root /tmp/room003-vault \
-            --run-id room003-media \
-            --provider-track-id room003-track \
+            --staged-file /tmp/room004-stage.wav \
+            --vault-root /tmp/room004-vault \
+            --run-id room004-media \
+            --provider-track-id room004-track \
             --asset-role audio_wav \
-            --observed-at 2026-10-01T19:50:00.000Z > vault-admit.json
+            --observed-at 2026-10-01T19:55:00.000Z > vault-admit.json
           node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('vault-admit.json','utf8'));fs.writeFileSync('vault-address.txt','sha256:'+r.receipt.sha256+'\n')"
 
       - name: Start read-only Vault resolver
         working-directory: _vault
         run: |
           npm run --silent resolver:serve -- \
-            --vault-root /tmp/room003-vault \
+            --vault-root /tmp/room004-vault \
             --port 13703 \
-            --room-origin http://127.0.0.1:13702 > /tmp/room003-vault-resolver.log 2>&1 &
-          echo $! > /tmp/room003-vault-resolver.pid
+            --room-origin http://127.0.0.1:13702 > /tmp/room004-vault-resolver.log 2>&1 &
+          echo $! > /tmp/room004-vault-resolver.pid
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsS http://127.0.0.1:13703/v0/status >/dev/null; then
-              exit 0
-            fi
+            if curl -fsS http://127.0.0.1:13703/v0/status >/dev/null; then exit 0; fi
             sleep 1
           done
-          cat /tmp/room003-vault-resolver.log
+          cat /tmp/room004-vault-resolver.log
           exit 1
 
-      - name: Verify browser-safe byte-range playback
+      - name: Verify browser-safe audio range playback
         run: |
           digest="$(sed 's/^sha256://' vault-address.txt | tr -d '\n')"
-          curl -fsS \
-            -D /tmp/room003-headers.txt \
+          curl -fsS -D /tmp/room004-audio-headers.txt \
             -H 'Origin: http://127.0.0.1:13702' \
             -H 'Range: bytes=0-11' \
             "http://127.0.0.1:13703/v0/media/$digest" \
-            -o /tmp/room003-first12.bin
-          grep -qi '^HTTP/.* 206' /tmp/room003-headers.txt
-          grep -qi '^Access-Control-Allow-Origin: http://127.0.0.1:13702' /tmp/room003-headers.txt
-          node -e "const fs=require('fs');const b=fs.readFileSync('/tmp/room003-first12.bin');if(b.toString('ascii',0,4)!=='RIFF'||b.toString('ascii',8,12)!=='WAVE')process.exit(1);"
-
-      - name: Resolve exact address through ROroomOM Vault organ
-        run: |
-          python3 experiments/relatte-com5-room-001/integration_vault_media.py \
-            "$(tr -d '\n' < vault-address.txt)" \
-            vault-descriptor.json
+            -o /tmp/room004-audio-first12.bin
+          grep -qi '^HTTP/.* 206' /tmp/room004-audio-headers.txt
+          grep -qi '^Access-Control-Allow-Origin: http://127.0.0.1:13702' /tmp/room004-audio-headers.txt
+          node -e "const fs=require('fs');const b=fs.readFileSync('/tmp/room004-audio-first12.bin');if(b.toString('ascii',0,4)!=='RIFF'||b.toString('ascii',8,12)!=='WAVE')process.exit(1);"
 
       - name: Upgrade audio Lego to verified playback
         run: |
+          python3 experiments/relatte-com5-room-001/integration_vault_media.py \
+            "$(tr -d '\n' < vault-address.txt)" vault-descriptor.json
           node experiments/relatte-com5-room-001/media-resolution-contract.mjs \
-            "$(tr -d '\n' < vault-address.txt)" \
-            vault-descriptor.json
+            "$(tr -d '\n' < vault-address.txt)" vault-descriptor.json
 
-      - name: Stop temporary Vault resolver
+      - name: Checkout Haunted Blender Video Window branch
+        uses: actions/checkout@v4
+        with:
+          repository: the-static-collective/the-haunted-blender
+          ref: experimental/relatte-video-window-001
+          path: _blender
+
+      - name: Verify Haunted Blender accepted-video resolver
+        working-directory: _blender
+        run: |
+          python -m unittest discover -s tests -p 'test_video_resolver.py' -v
+          python -m py_compile haunted_blender/video_resolver.py
+          python -m py_compile haunted_blender/accepted_video_server.py
+
+      - name: Build real filmmaker-accepted synthetic video fixture
+        working-directory: _blender
+        run: |
+          PYTHONPATH=. python examples/video_window_fixture.py /tmp/room004-blender > ../blender-fixture.json
+          python - <<'PY'
+          import json, pathlib
+          value=json.loads(pathlib.Path('../blender-fixture.json').read_text())
+          pathlib.Path('../blender-address.txt').write_text(value['address']+'\n')
+          assert value['status']=='filmmaker_accepted_private_preview'
+          assert value['distribution_authorized'] is False
+          PY
+
+      - name: Start read-only Haunted Blender resolver
+        working-directory: _blender
+        run: |
+          PYTHONPATH=. python -m haunted_blender.accepted_video_server \
+            /tmp/room004-blender \
+            --port 13704 \
+            --room-origin http://127.0.0.1:13702 > /tmp/room004-blender.log 2>&1 &
+          echo $! > /tmp/room004-blender.pid
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:13704/v0/status >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/room004-blender.log
+          exit 1
+
+      - name: Verify browser-safe accepted-video range playback
+        run: |
+          digest="$(sed 's/^sha256://' blender-address.txt | tr -d '\n')"
+          curl -fsS -D /tmp/room004-video-headers.txt \
+            -H 'Origin: http://127.0.0.1:13702' \
+            -H 'Range: bytes=0-31' \
+            "http://127.0.0.1:13704/v0/media/$digest" \
+            -o /tmp/room004-video-first32.bin
+          grep -qi '^HTTP/.* 206' /tmp/room004-video-headers.txt
+          grep -qi '^Access-Control-Allow-Origin: http://127.0.0.1:13702' /tmp/room004-video-headers.txt
+          python - <<'PY'
+          from pathlib import Path
+          data=Path('/tmp/room004-video-first32.bin').read_bytes()
+          assert data[4:8] == b'ftyp', data[:16]
+          PY
+
+      - name: Resolve accepted video through ROroomOM Blender organ
+        run: |
+          python3 experiments/relatte-com5-room-001/integration_blender_video.py \
+            "$(tr -d '\n' < blender-address.txt)" blender-descriptor.json
+
+      - name: Upgrade video Lego to filmmaker-accepted Video Window
+        run: |
+          node experiments/relatte-com5-room-001/video-resolution-contract.mjs \
+            "$(tr -d '\n' < blender-address.txt)" blender-descriptor.json
+
+      - name: Stop temporary media resolvers
         if: always()
         run: |
-          if [ -f /tmp/room003-vault-resolver.pid ]; then
-            kill "$(cat /tmp/room003-vault-resolver.pid)" 2>/dev/null || true
+          if [ -f /tmp/room004-vault-resolver.pid ]; then
+            kill "$(cat /tmp/room004-vault-resolver.pid)" 2>/dev/null || true
+          fi
+          if [ -f /tmp/room004-blender.pid ]; then
+            kill "$(cat /tmp/room004-blender.pid)" 2>/dev/null || true
           fi
