@@ -6,6 +6,7 @@ import {
   actEncounter,
   enterDoor,
   exportEncounterReceipt,
+  makeNavigationRequest,
   openNavigator,
   useInstrument,
 } from './room.mjs';
@@ -100,4 +101,26 @@ test('authority inflation is refused',()=>{
   const nav=openNavigator(tampered);
   assert.equal(nav.ok,false);
   assert.equal(nav.code,'authority-overclaim');
+});
+
+
+test('Room can ask reLATTE to reverify one projected neighbor',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:return-request');
+  const request=makeNavigationRequest(room,'particular:listener');
+
+  assert.equal(request.format,'roroomom.relatte-navigation-request/v0');
+  assert.equal(request.source_subject,fixture.subject);
+  assert.equal(request.requested_subject,'particular:listener');
+  assert.equal(request.authority,'none');
+  assert.ok(request.boundary.includes('reLATTE MUST REVERIFY NEIGHBOR'));
+});
+
+test('Room refuses to request a destination absent from the source projection',()=>{
+  const nav=openNavigator(fixture);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:return-request-refuse');
+  const request=makeNavigationRequest(room,'particular:invented');
+
+  assert.equal(request.ok,false);
+  assert.equal(request.code,'not-source-neighbor');
 });
