@@ -993,6 +993,10 @@ const HUMAN_AI_RECEIPT_SCHEMA='roroomom.human-ai-crossing-receipt/v0';
 const HUMAN_AI_DECISIONS=new Set(['ACCEPT','HOLD','REFUSE']);
 const HUMAN_OFFER_SCHEMA='roroomom.human-offer/v0';
 const AI_ECHO_SCHEMA='roroomom.ai-offer-echo/v0';
+const GUEST_PORT_SCHEMA='roroomom.guest-port/v0';
+const GUEST_DRAFT_SCHEMA='roroomom.guest-response-draft/v0';
+const GUEST_RESPONSE_SCHEMA='roroomom.guest-port-response/v0';
+const GUEST_PROPOSAL_SCHEMA='roroomom.guest-room-score-proposal/v0';
 const OFFER_ACTIONS=new Set([
   'INSPECT_ROOM_SCORE',
   'READ_PLAY_MEMORY',
@@ -1264,7 +1268,7 @@ async function verifiedAiEcho(room, offer, echo) {
 
 async function verifiedProposalCore(proposal) {
   if (!plain(proposal)
-    || proposal.schema!==AI_PROPOSAL_SCHEMA
+    || ![AI_PROPOSAL_SCHEMA,GUEST_PROPOSAL_SCHEMA].includes(proposal.schema)
     || !/^[a-f0-9]{64}$/.test(proposal.proposalSha256 ?? '')
     || proposal.proposalId!=='proposal:'+proposal.proposalSha256
     || proposal.authority!=='proposal-only')
@@ -1427,6 +1431,415 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
     ...core,
     proposalSha256,
     proposalId:'proposal:'+proposalSha256,
+  };
+}
+
+
+function validGuestParticipant(value) {
+  return plain(value)
+    && value.type==='ai-participant'
+    && strictText(value.id,200)
+    && (value.label===undefined || strictText(value.label,200))
+    && (value.provider===undefined || strictText(value.provider,200))
+    && (value.model===undefined || strictText(value.model,200));
+}
+
+async function permittedMemoryForOffer(room, memories, offer) {
+  if (!offer.memoryPolicy.enabled) {
+    return projectPerformanceMemory([],{sourceSubject:room.sourceSubject});
+  }
+  const allProjection=await projectPerformanceMemory(memories,{sourceSubject:room.sourceSubject});
+  if (allProjection.ok===false) return allProjection;
+  const validIds=new Set(allProjection.memoryRefs);
+  const permitted=memories.filter(memory=>
+    validIds.has(memory?.memoryId)
+    && offer.memoryPolicy.allowedVerdicts.includes(memory?.humanVerdict?.verdict)
+  );
+  return projectPerformanceMemory(permitted,{sourceSubject:room.sourceSubject});
+}
+
+export async function createGuestPortPacket(room, memories, offer) {
+  if (!room?.ok || room.status!=='local-encounter' || !room.roomScore)
+    return fail('score-not-compiled','Compile a Room Score before opening Guest Port.');
+  if (!Array.isArray(memories))
+    return fail('invalid-memory-ledger','Guest Port requires a memory ledger array.');
+
+  const offerCore=await verifiedHumanOffer(room,offer);
+  if (!offerCore)
+    return fail('invalid-human-offer','Guest Port requires a current verified Human Offer.');
+
+  const memoryProjection=await permittedMemoryForOffer(room,memories,offer);
+  if (memoryProjection.ok===false) return memoryProjection;
+
+  const tracks=new Map(room.roomScore.mediaTracks.map(track=>[track.instrument,track]));
+  const offered=offer.offered.map(block=>{
+    const track=tracks.get(block.localInstrumentId) ?? null;
+    return {
+      localInstrumentId:block.localInstrumentId,
+      kind:block.kind,
+      sourceRef:block.sourceRef,
+      resolvedSha256:block.resolvedSha256,
+      organ:block.organ,
+      ...(track ? {currentOffsetMs:track.offsetMs} : {}),
+    };
+  });
+
+  const core={
+    schema:GUEST_PORT_SCHEMA,
+    port:{
+      sourceSubject:room.sourceSubject,
+      encounterId:room.encounterId,
+      roomScoreSha256:await roomScoreSha256(room),
+      roomScoreTitle:room.roomScore.title,
+      humanOfferId:offer.offerId,
+      humanOfferSha256:offer.offerSha256,
+    },
+    humanOffer:{
+      intent:offer.intent,
+      offered,
+      capabilities:clone(offer.capabilities),
+      memoryPolicy:clone(offer.memoryPolicy),
+      protected:[...offer.protected],
+      authority:offer.authority,
+    },
+    memoryView:{
+      memoryRefs:[...memoryProjection.memoryRefs],
+      invitations:memoryProjection.prophecy.invitations.map(item=>({
+        kind:item.kind,
+        evidenceRefs:[...item.evidenceRefs],
+        authority:item.authority,
+      })),
+      authority:memoryProjection.authority,
+      prophecyAuthority:memoryProjection.prophecy.authority,
+    },
+    responseContract:{
+      echoRequired:true,
+      proposalOptional:true,
+      proposalOps:['SET_MEDIA_OFFSET_MS'],
+      humanDecisionRequired:true,
+      schemas:{
+        draft:GUEST_DRAFT_SCHEMA,
+        response:GUEST_RESPONSE_SCHEMA,
+        proposal:GUEST_PROPOSAL_SCHEMA,
+      },
+      draftContract:{
+        participantType:'ai-participant',
+        required:['schema','participant','understanding','uncertainties'],
+        optional:['proposal'],
+        proposalOp:'SET_MEDIA_OFFSET_MS',
+      },
+    },
+    authority:'transport-neutral-invitation',
+    boundary:[
+      'TRANSPORT != PARTICIPANT',
+      'MODEL PROVIDER != AUTHORITY',
+      'DECLARED PARTICIPANT != VERIFIED PROVIDER IDENTITY',
+      'GUEST PACKET != ROOM ACCESS',
+      'SAME OFFER != SAME INTERPRETATION',
+      'MULTIPLE ECHOES != CONSENSUS',
+      'PROPOSAL SET != DECISION',
+    ],
+  };
+  const guestPortSha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    guestPortSha256,
+    guestPortId:'guest-port:'+guestPortSha256,
+  };
+}
+
+async function verifiedGuestPortPacket(room, memories, offer, packet) {
+  if (!plain(packet)
+    || packet.schema!==GUEST_PORT_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(packet.guestPortSha256 ?? '')
+    || packet.guestPortId!=='guest-port:'+packet.guestPortSha256
+    || packet.authority!=='transport-neutral-invitation')
+    return null;
+  const core={
+    schema:packet.schema,
+    port:packet.port,
+    humanOffer:packet.humanOffer,
+    memoryView:packet.memoryView,
+    responseContract:packet.responseContract,
+    authority:packet.authority,
+    boundary:packet.boundary,
+  };
+  if (await hashCanonicalLocal(core)!==packet.guestPortSha256) return null;
+  const offerCore=await verifiedHumanOffer(room,offer);
+  if (!offerCore || !Array.isArray(memories)) return null;
+
+  const expected=await createGuestPortPacket(room,memories,offer);
+  if (expected.ok===false
+    || expected.guestPortSha256!==packet.guestPortSha256
+    || expected.guestPortId!==packet.guestPortId)
+    return null;
+
+  return core;
+}
+
+function offeredGuestTrack(packet,instrument) {
+  return packet.humanOffer?.offered?.find(item=>item.localInstrumentId===instrument) ?? null;
+}
+
+export async function createGuestPortResponse(packet, spec) {
+  if (!plain(packet)
+    || packet.schema!==GUEST_PORT_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(packet.guestPortSha256 ?? '')
+    || packet.guestPortId!=='guest-port:'+packet.guestPortSha256)
+    return fail('invalid-guest-port','Guest response requires a structurally valid Guest Port packet.');
+  const packetCore={
+    schema:packet.schema,
+    port:packet.port,
+    humanOffer:packet.humanOffer,
+    memoryView:packet.memoryView,
+    responseContract:packet.responseContract,
+    authority:packet.authority,
+    boundary:packet.boundary,
+  };
+  if (await hashCanonicalLocal(packetCore)!==packet.guestPortSha256)
+    return fail('invalid-guest-port','Guest Port packet failed deterministic integrity verification.');
+
+  if (!plain(spec) || spec.schema!==GUEST_DRAFT_SCHEMA)
+    return fail('invalid-guest-draft','Guest response requires roroomom.guest-response-draft/v0.');
+  if (!validGuestParticipant(spec.participant))
+    return fail('invalid-guest-participant','Guest response requires a declared AI participant.');
+  if (!strictText(spec.understanding,1200))
+    return fail('invalid-guest-echo','Guest response requires a bounded Echo.');
+  const uncertainties=uniqueStrings(spec.uncertainties ?? [],12);
+  if (!uncertainties)
+    return fail('invalid-guest-echo','Guest uncertainties must be bounded unique strings.');
+
+  let proposal=null;
+  if (spec.proposal!==undefined && spec.proposal!==null) {
+    if (!plain(spec.proposal)
+      || spec.proposal.op!=='SET_MEDIA_OFFSET_MS'
+      || !strictText(spec.proposal.instrument,500)
+      || !boundedInteger(spec.proposal.value,0,600000)
+      || !strictText(spec.proposal.rationale,1000))
+      return fail('invalid-guest-proposal','Guest proposal is outside the portable response grammar.');
+
+    const offered=offeredGuestTrack(packet,spec.proposal.instrument);
+    if (!offered || !Number.isInteger(offered.currentOffsetMs))
+      return fail('instrument-not-offered','Guest proposal targets material not offered as a timed media track.');
+    if (!packet.humanOffer.capabilities.allowedActions.includes('PROPOSE_MEDIA_OFFSET_MS'))
+      return fail('proposal-not-authorized','Guest Port packet did not permit media-offset proposals.');
+
+    const delta=Math.abs(spec.proposal.value-offered.currentOffsetMs);
+    if (delta>packet.humanOffer.capabilities.maxOffsetDeltaMs)
+      return fail('proposal-exceeds-offer-limit','Guest proposal exceeds the Human Offer timing limit.');
+
+    proposal={
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:spec.proposal.instrument,
+      fromValue:offered.currentOffsetMs,
+      value:spec.proposal.value,
+      rationale:spec.proposal.rationale,
+    };
+  }
+
+  const echoCore={
+    participant:clone(spec.participant),
+    understanding:spec.understanding,
+    uncertainties,
+    capabilitiesHeard:clone(packet.humanOffer.capabilities),
+    offeredHeard:clone(packet.humanOffer.offered),
+    protectedHeard:[...packet.humanOffer.protected],
+    memoryObserved:clone(packet.memoryView),
+  };
+  const echoSha256=await hashCanonicalLocal(echoCore);
+  const echo={
+    ...echoCore,
+    echoSha256,
+    echoId:'guest-echo:'+echoSha256,
+    authority:'echo-only',
+  };
+
+  const core={
+    schema:GUEST_RESPONSE_SCHEMA,
+    guestPortId:packet.guestPortId,
+    guestPortSha256:packet.guestPortSha256,
+    participant:clone(spec.participant),
+    echo,
+    proposal,
+    authority:'guest-response-only',
+    boundary:[
+      'GUEST RESPONSE != ROOM CONSEQUENCE',
+      'DECLARED PARTICIPANT != VERIFIED PROVIDER IDENTITY',
+      'ECHO != CONSENSUS',
+      'AGREEMENT != TRUTH',
+      'DISAGREEMENT != FAILURE',
+      'PROPOSAL SET != DECISION',
+    ],
+  };
+  const responseSha256=await hashCanonicalLocal(core);
+  return {
+    ...core,
+    responseSha256,
+    responseId:'guest-response:'+responseSha256,
+  };
+}
+
+async function verifiedGuestResponse(packet,response) {
+  if (!plain(response)
+    || response.schema!==GUEST_RESPONSE_SCHEMA
+    || !/^[a-f0-9]{64}$/.test(response.responseSha256 ?? '')
+    || response.responseId!=='guest-response:'+response.responseSha256
+    || response.guestPortId!==packet.guestPortId
+    || response.guestPortSha256!==packet.guestPortSha256
+    || response.authority!=='guest-response-only'
+    || !validGuestParticipant(response.participant)
+    || !plain(response.echo)
+    || response.echo.authority!=='echo-only'
+    || response.echo.participant?.id!==response.participant.id)
+    return false;
+
+  if (canonicalJson(response.echo.capabilitiesHeard)!==canonicalJson(packet.humanOffer.capabilities)
+    || canonicalJson(response.echo.offeredHeard)!==canonicalJson(packet.humanOffer.offered)
+    || canonicalJson(response.echo.protectedHeard)!==canonicalJson(packet.humanOffer.protected)
+    || canonicalJson(response.echo.memoryObserved)!==canonicalJson(packet.memoryView))
+    return false;
+
+  const core={
+    schema:response.schema,
+    guestPortId:response.guestPortId,
+    guestPortSha256:response.guestPortSha256,
+    participant:response.participant,
+    echo:response.echo,
+    proposal:response.proposal,
+    authority:response.authority,
+    boundary:response.boundary,
+  };
+  return await hashCanonicalLocal(core)===response.responseSha256;
+}
+
+export async function importGuestPortResponse(room, memories, offer, packet, response) {
+  const packetCore=await verifiedGuestPortPacket(room,memories,offer,packet);
+  if (!packetCore)
+    return fail('invalid-guest-port','Guest Port packet is stale, altered, or bound to another Room.');
+  if (!await verifiedGuestResponse(packet,response))
+    return fail('invalid-guest-response','Guest response failed integrity or Guest Port binding.');
+
+  if (response.echo?.participant?.id!==response.participant.id
+    || response.echo?.authority!=='echo-only')
+    return fail('invalid-guest-echo','Guest Echo participant or authority is inconsistent.');
+
+  let proposal=null;
+  if (response.proposal) {
+    const offered=offeredGuestTrack(packet,response.proposal.instrument);
+    if (!offered || !Number.isInteger(offered.currentOffsetMs))
+      return fail('instrument-not-offered','Guest response proposal targets an unoffered timed instrument.');
+    if (response.proposal.fromValue!==offered.currentOffsetMs)
+      return fail('stale-guest-proposal','Guest proposal does not begin from the packet timing value.');
+    const delta=Math.abs(response.proposal.value-response.proposal.fromValue);
+    if (delta>packet.humanOffer.capabilities.maxOffsetDeltaMs)
+      return fail('proposal-exceeds-offer-limit','Guest response exceeds the Human Offer timing limit.');
+
+    const proposalCore={
+      schema:GUEST_PROPOSAL_SCHEMA,
+      participant:clone(response.participant),
+      target:{
+        sourceSubject:room.sourceSubject,
+        encounterId:room.encounterId,
+        roomScoreSha256:packet.port.roomScoreSha256,
+        roomScoreTitle:packet.port.roomScoreTitle,
+      },
+      basis:{
+        sourceRefs:[...new Set(packet.humanOffer.offered.map(item=>item.sourceRef))].sort(),
+        memoryRefs:[...packet.memoryView.memoryRefs],
+        memoryInvitations:packet.memoryView.invitations.map(item=>clone(item)),
+        memoryAuthority:packet.memoryView.authority,
+        prophecyAuthority:packet.memoryView.prophecyAuthority,
+      },
+      crossingContext:{
+        humanOfferId:offer.offerId,
+        humanOfferSha256:offer.offerSha256,
+        guestPortId:packet.guestPortId,
+        guestPortSha256:packet.guestPortSha256,
+        guestResponseId:response.responseId,
+        guestResponseSha256:response.responseSha256,
+        guestEchoId:response.echo.echoId,
+        guestEchoSha256:response.echo.echoSha256,
+      },
+      rationale:response.proposal.rationale,
+      patch:{
+        op:'SET_MEDIA_OFFSET_MS',
+        instrument:response.proposal.instrument,
+        fromValue:response.proposal.fromValue,
+        value:response.proposal.value,
+      },
+      changes:[{
+        field:`roomScore.mediaTracks[${response.proposal.instrument}].offsetMs`,
+        from:response.proposal.fromValue,
+        to:response.proposal.value,
+      }],
+      invariants:[
+        'sourceSubject',
+        'instrument sourceRef',
+        'resolved media sha256',
+        'lyric sourceRef',
+        'lyric cue ranges',
+        'reLATTE history',
+        'source media bytes',
+      ],
+      authority:'proposal-only',
+      boundary:[
+        'GUEST != SYSTEM',
+        'GUEST RESPONSE != CONSENT',
+        'MULTIPLE ECHOES != CONSENSUS',
+        'PROPOSAL SET != DECISION',
+        'ACCEPTANCE REQUIRES HUMAN CROSSING',
+      ],
+    };
+    const proposalSha256=await hashCanonicalLocal(proposalCore);
+    proposal={
+      ...proposalCore,
+      proposalSha256,
+      proposalId:'proposal:'+proposalSha256,
+    };
+  }
+
+  return {
+    ok:true,
+    status:'guest-response-imported',
+    participant:clone(response.participant),
+    echo:clone(response.echo),
+    proposal,
+    responseId:response.responseId,
+    authority:'none',
+  };
+}
+
+export async function projectGuestPortResponses(packet,responses) {
+  if (!plain(packet) || packet.schema!==GUEST_PORT_SCHEMA || !Array.isArray(responses))
+    return fail('invalid-guest-response-set','Guest response projection requires one packet and an array of responses.');
+
+  const valid=[];
+  let invalidCount=0;
+  for (const response of responses) {
+    if (await verifiedGuestResponse(packet,response)) valid.push(response);
+    else invalidCount+=1;
+  }
+
+  return {
+    schema:'roroomom.guest-response-projection/v0',
+    guestPortId:packet.guestPortId,
+    responses:valid.map(response=>({
+      responseId:response.responseId,
+      participant:clone(response.participant),
+      echo:{
+        understanding:response.echo.understanding,
+        uncertainties:[...response.echo.uncertainties],
+      },
+      proposal:response.proposal ? clone(response.proposal) : null,
+    })),
+    invalidCount,
+    boundary:[
+      'MULTIPLE ECHOES != CONSENSUS',
+      'AGREEMENT != TRUTH',
+      'DISAGREEMENT != FAILURE',
+      'PROPOSAL SET != DECISION',
+    ],
+    authority:'none',
   };
 }
 

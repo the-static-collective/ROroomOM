@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 008 Offer Echo Cross contract
+name: reLATTE COM5 Room 009 Guest Port contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-008-offer-echo-cross
+      - experiment/relatte-com5-room-009-guest-port
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -265,6 +265,13 @@ jobs:
       - name: Cross Human Offer through AI Echo before proposal
         run: |
           node experiments/relatte-com5-room-001/offer-echo-cross-contract.mjs \
+            vault-descriptor.json \
+            blender-descriptor.json \
+            room-score-lyrics.txt
+
+      - name: Cross one Human Offer through multiple independent guests
+        run: |
+          node experiments/relatte-com5-room-001/guest-port-contract.mjs \
             vault-descriptor.json \
             blender-descriptor.json \
             room-score-lyrics.txt

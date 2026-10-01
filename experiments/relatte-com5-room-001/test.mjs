@@ -11,6 +11,8 @@ import {
   compileRoomScore,
   createAiOfferEcho,
   createAiRoomScoreProposal,
+  createGuestPortPacket,
+  createGuestPortResponse,
   createHumanOffer,
   createPerformanceMemory,
   enterDoor,
@@ -19,6 +21,8 @@ import {
   openNavigator,
   prepareMediaResolution,
   prepareTextResolution,
+  importGuestPortResponse,
+  projectGuestPortResponses,
   projectPerformanceMemory,
   resolveHumanAiCrossing,
   roomScoreFrame,
@@ -906,4 +910,241 @@ test('accepted offer-echo proposal receipt preserves the full crossing lineage',
   assert.equal(result.crossingReceipt.decision,'ACCEPT');
   assert.equal(result.crossingReceipt.changed,true);
   assert.equal(result.room.sourceMutated,false);
+});
+
+
+async function guestPortFixture(){
+  const {room,memories,weird,keep,offer}=await offerEchoFixture({
+    memoryEnabled:true,
+    allowedVerdicts:['weird'],
+    maxOffsetDeltaMs:500,
+    offeredInstruments:[
+      'lego:2:audio-player',
+      'lego:4:video-player',
+      'lego:3:text-sheet',
+    ],
+  });
+  const packet=await createGuestPortPacket(room,memories,offer);
+  return {room,memories,weird,keep,offer,packet};
+}
+
+test('Guest Port exports one transport-neutral bounded world',async()=>{
+  const {room,weird,keep,offer,packet}=await guestPortFixture();
+
+  assert.equal(packet.schema,'roroomom.guest-port/v0');
+  assert.equal(packet.authority,'transport-neutral-invitation');
+  assert.equal(packet.port.sourceSubject,room.sourceSubject);
+  assert.equal(packet.port.humanOfferId,offer.offerId);
+  assert.deepEqual(packet.memoryView.memoryRefs,[weird.memoryId]);
+  assert.equal(packet.memoryView.memoryRefs.includes(keep.memoryId),false);
+  assert.ok(packet.boundary.includes('TRANSPORT != PARTICIPANT'));
+  assert.ok(packet.boundary.includes('MULTIPLE ECHOES != CONSENSUS'));
+  assert.match(packet.guestPortSha256,/^[a-f0-9]{64}$/);
+});
+
+test('independent guests can return different echoes and proposals for the same packet',async()=>{
+  const {packet}=await guestPortFixture();
+
+  const guestA=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{
+      type:'ai-participant',
+      id:'ai:guest-a',
+      label:'Guest A',
+      provider:'provider-a',
+      model:'model-a',
+    },
+    understanding:'Try a modest nearby timing mutation while preserving every protected source.',
+    uncertainties:['Exact visual beat remains subjective.'],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:500,
+      rationale:'Move the video 250 ms later as one nearby option.',
+    },
+  });
+
+  const guestB=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{
+      type:'ai-participant',
+      id:'ai:guest-b',
+      label:'Guest B',
+      provider:'provider-b',
+      model:'model-b',
+    },
+    understanding:'Preserve source identity and test the far edge of the permitted timing window.',
+    uncertainties:['The strongest contrast may be no timing change at all.'],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+      rationale:'Move the video 500 ms later without altering source media.',
+    },
+  });
+
+  assert.equal(guestA.schema,'roroomom.guest-port-response/v0');
+  assert.equal(guestB.schema,'roroomom.guest-port-response/v0');
+  assert.equal(guestA.guestPortId,packet.guestPortId);
+  assert.equal(guestB.guestPortId,packet.guestPortId);
+  assert.notEqual(guestA.responseId,guestB.responseId);
+  assert.notEqual(guestA.proposal.value,guestB.proposal.value);
+
+  const projection=await projectGuestPortResponses(packet,[guestA,guestB]);
+  assert.equal(projection.responses.length,2);
+  assert.equal(projection.invalidCount,0);
+  assert.equal(projection.authority,'none');
+  assert.ok(projection.boundary.includes('DISAGREEMENT != FAILURE'));
+  assert.ok(projection.boundary.includes('PROPOSAL SET != DECISION'));
+});
+
+test('same guest proposal value from multiple guests does not collapse into consensus',async()=>{
+  const {packet}=await guestPortFixture();
+
+  const responses=[];
+  for(const id of ['ai:same-a','ai:same-b']){
+    responses.push(await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+      participant:{type:'ai-participant',id},
+      understanding:'Offer the same bounded timing option independently.',
+      uncertainties:[],
+      proposal:{
+        op:'SET_MEDIA_OFFSET_MS',
+        instrument:'lego:4:video-player',
+        value:500,
+        rationale:'Independent guest proposal.',
+      },
+    }));
+  }
+
+  const projection=await projectGuestPortResponses(packet,responses);
+  assert.equal(projection.responses.length,2);
+  assert.equal(projection.responses[0].proposal.value,500);
+  assert.equal(projection.responses[1].proposal.value,500);
+  assert.ok(projection.boundary.includes('AGREEMENT != TRUTH'));
+  assert.ok(projection.boundary.includes('MULTIPLE ECHOES != CONSENSUS'));
+});
+
+test('guest response can enter one human decision crossing without affecting sibling guests',async()=>{
+  const {room,memories,offer,packet}=await guestPortFixture();
+
+  const guestA=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{type:'ai-participant',id:'ai:guest-open-a'},
+    understanding:'Offer one bounded timing shift.',
+    uncertainties:[],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:500,
+      rationale:'Try a 250 ms later video entrance.',
+    },
+  });
+  const guestB=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{type:'ai-participant',id:'ai:guest-open-b'},
+    understanding:'Offer another bounded timing shift.',
+    uncertainties:[],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:750,
+      rationale:'Try a 500 ms later video entrance.',
+    },
+  });
+
+  const imported=await importGuestPortResponse(room,memories,offer,packet,guestB);
+  assert.equal(imported.ok,true);
+  assert.equal(imported.status,'guest-response-imported');
+  assert.equal(imported.participant.id,'ai:guest-open-b');
+  assert.equal(imported.proposal.patch.value,750);
+  assert.equal(imported.proposal.authority,'proposal-only');
+
+  const held=await resolveHumanAiCrossing(room,imported.proposal,'HOLD');
+  assert.equal(held.ok,true);
+  assert.equal(held.crossingReceipt.changed,false);
+  assert.equal(
+    held.room.roomScore.mediaTracks.find(track=>track.instrument==='lego:4:video-player').offsetMs,
+    250,
+  );
+
+  const accepted=await resolveHumanAiCrossing(held.room,imported.proposal,'ACCEPT');
+  assert.equal(accepted.ok,true);
+  assert.equal(
+    accepted.room.roomScore.mediaTracks.find(track=>track.instrument==='lego:4:video-player').offsetMs,
+    750,
+  );
+  assert.equal(accepted.crossingReceipt.crossingContext.guestResponseId,guestB.responseId);
+
+  const projection=await projectGuestPortResponses(packet,[guestA,guestB]);
+  assert.equal(projection.responses.length,2);
+  assert.equal(projection.responses.some(item=>item.responseId===guestA.responseId),true);
+});
+
+test('tampered guest response is excluded and cannot be imported',async()=>{
+  const {room,memories,offer,packet}=await guestPortFixture();
+
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{type:'ai-participant',id:'ai:guest-tamper'},
+    understanding:'Bounded timing suggestion.',
+    uncertainties:[],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:500,
+      rationale:'A valid nearby option.',
+    },
+  });
+  const forged=structuredClone(response);
+  forged.proposal.value=750;
+
+  const projection=await projectGuestPortResponses(packet,[forged]);
+  assert.equal(projection.responses.length,0);
+  assert.equal(projection.invalidCount,1);
+
+  const imported=await importGuestPortResponse(room,memories,offer,packet,forged);
+  assert.equal(imported.ok,false);
+  assert.equal(imported.code,'invalid-guest-response');
+});
+
+test('changed permitted memory makes an exported Guest Port stale on import',async()=>{
+  const {room,memories,offer,packet}=await guestPortFixture();
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{type:'ai-participant',id:'ai:guest-stale-memory'},
+    understanding:'Respond to the exported bounded memory view.',
+    uncertainties:[],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:500,
+      rationale:'Nearby timing option.',
+    },
+  });
+
+  const extraRoom={...room,encounterId:'room-encounter:guest-extra'};
+  const extra=await createPerformanceMemory(extraRoom,{
+    verdict:'weird',
+    reopenRequested:false,
+  });
+  const currentMemories=[...memories,extra];
+
+  const imported=await importGuestPortResponse(
+    room,currentMemories,offer,packet,response
+  );
+  assert.equal(imported.ok,false);
+  assert.equal(imported.code,'invalid-guest-port');
+});
+
+test('Guest Port refuses proposal beyond human envelope before response exists',async()=>{
+  const {packet}=await guestPortFixture();
+
+  const response=await createGuestPortResponse(packet,{schema:'roroomom.guest-response-draft/v0',
+    participant:{type:'ai-participant',id:'ai:guest-too-far'},
+    understanding:'Attempt a timing change beyond the exported capability envelope.',
+    uncertainties:[],
+    proposal:{
+      op:'SET_MEDIA_OFFSET_MS',
+      instrument:'lego:4:video-player',
+      value:751,
+      rationale:'This should be refused by the portable protocol.',
+    },
+  });
+
+  assert.equal(response.ok,false);
+  assert.equal(response.code,'proposal-exceeds-offer-limit');
 });
