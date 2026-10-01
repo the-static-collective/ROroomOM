@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  acceptLocalTextBytes,
   acceptMediaResolution,
   actEncounter,
+  compileRoomScore,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
   prepareMediaResolution,
+  prepareTextResolution,
+  roomScoreFrame,
   useInstrument,
 } from './room.mjs';
 
@@ -245,4 +250,151 @@ test('candidate status cannot masquerade as accepted Video Window media',()=>{
 
   assert.equal(refused.ok,false);
   assert.equal(refused.code,'media-resolution-mismatch');
+});
+
+
+function scoredFixture(lyrics){
+  const value=structuredClone(fixture);
+  const digest=createHash('sha256').update(Buffer.from(lyrics,'utf8')).digest('hex');
+  const compose=value.doors.find(door=>door.role==='COMPOSE');
+  const sheet=compose.instruments.find(item=>item.kind==='text-sheet');
+  const media=value.media_refs.find(item=>item.role==='lyrics');
+  sheet.ref='sha256:'+digest;
+  media.address='sha256:'+digest;
+  return {value,digest};
+}
+
+async function resolvedScoreRoom(lyrics='Line one\nLine two\nLine three\nLine four'){
+  const {value,digest}=scoredFixture(lyrics);
+  const nav=openNavigator(value);
+  let room=enterDoor(nav,'COMPOSE',true,'room-encounter:room-score');
+
+  room=acceptMediaResolution(room,'lego:2:audio-player',{
+    organ:'autodiscography-vault.audio-resolver-v0',
+    status:'resolved-verified',
+    address:'sha256:'+'1'.repeat(64),
+    sha256:'1'.repeat(64),
+    mediaType:'audio/wav',
+    byteLength:4096,
+    playbackUrl:'http://127.0.0.1:13703/v0/media/'+'1'.repeat(64),
+    authority:'none',
+  });
+
+  room=acceptMediaResolution(room,'lego:4:video-player',{
+    organ:'haunted-blender.accepted-video-resolver-v0',
+    status:'resolved-filmmaker-accepted-private-take',
+    address:'sha256:'+'3'.repeat(64),
+    sha256:'3'.repeat(64),
+    mediaType:'video/mp4',
+    byteLength:8192,
+    playbackUrl:'http://127.0.0.1:13704/v0/media/'+'3'.repeat(64),
+    distributionAuthorized:false,
+    authority:'none',
+  });
+
+  room=await acceptLocalTextBytes(room,'lego:3:text-sheet',Buffer.from(lyrics,'utf8'));
+  return {room,digest,lyrics};
+}
+
+test('Text Sheet accepts only exact local UTF-8 bytes for its address',async()=>{
+  const lyrics='First line\nSecond line\nThird line';
+  const {value,digest}=scoredFixture(lyrics);
+  const nav=openNavigator(value);
+  const room=enterDoor(nav,'COMPOSE',true,'room-encounter:text-exact');
+
+  const request=prepareTextResolution(room,'lego:3:text-sheet');
+  assert.equal(request.address,'sha256:'+digest);
+
+  const accepted=await acceptLocalTextBytes(room,'lego:3:text-sheet',Buffer.from(lyrics,'utf8'));
+  assert.equal(accepted.ok,true);
+  assert.equal(accepted.resolvedText['lego:3:text-sheet'].sha256,digest);
+  assert.equal(accepted.resolvedText['lego:3:text-sheet'].lineCount,3);
+  assert.equal(accepted.sourceMutated,false);
+
+  const refused=await acceptLocalTextBytes(room,'lego:3:text-sheet',Buffer.from(lyrics+'!','utf8'));
+  assert.equal(refused.ok,false);
+  assert.equal(refused.code,'text-address-mismatch');
+});
+
+test('Room Score compiles already-resolved Lego without merging source identities',async()=>{
+  const {room,digest}=await resolvedScoreRoom();
+  const scored=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:'First local score',
+    clock:'lego:2:audio-player',
+    mediaTracks:[
+      {instrument:'lego:2:audio-player',offsetMs:0},
+      {instrument:'lego:4:video-player',offsetMs:250},
+    ],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues:[
+        {atMs:0,fromLine:1,toLine:2},
+        {atMs:1000,fromLine:3,toLine:4},
+      ],
+    },
+  });
+
+  assert.equal(scored.ok,true);
+  assert.equal(scored.roomScore.status,'compiled-local-arrangement');
+  assert.equal(scored.roomScore.mediaTracks[0].sourceRef,'sha256:'+'1'.repeat(64));
+  assert.equal(scored.roomScore.mediaTracks[1].sourceRef,'sha256:'+'3'.repeat(64));
+  assert.equal(scored.roomScore.lyricTrack.sourceRef,'sha256:'+digest);
+  assert.ok(scored.roomScore.boundary.includes('SYNC != MERGER'));
+  assert.equal(scored.sourceMutated,false);
+  assert.equal(scored.sharedWorldChanged,false);
+});
+
+test('Room Score frame conducts media offsets and lyric cues from one local clock',async()=>{
+  const {room}=await resolvedScoreRoom();
+  const scored=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:'Conducted room',
+    clock:'lego:2:audio-player',
+    mediaTracks:[
+      {instrument:'lego:2:audio-player',offsetMs:0},
+      {instrument:'lego:4:video-player',offsetMs:250},
+    ],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues:[
+        {atMs:0,fromLine:1,toLine:2},
+        {atMs:1000,fromLine:3,toLine:4},
+      ],
+    },
+  });
+
+  const early=roomScoreFrame(scored,500);
+  assert.equal(early.ok,true);
+  assert.equal(early.media[0].desiredTimeSeconds,0.5);
+  assert.equal(early.media[1].desiredTimeSeconds,0.75);
+  assert.equal(early.lyric.text,'Line one\nLine two');
+
+  const later=roomScoreFrame(scored,1250);
+  assert.equal(later.lyric.text,'Line three\nLine four');
+});
+
+test('Room Score refuses unresolved tracks and encounter receipt omits lyric plaintext',async()=>{
+  const {value}=scoredFixture('private lyric\nsecond line');
+  const nav=openNavigator(value);
+  const bare=enterDoor(nav,'COMPOSE',true,'room-encounter:score-refuse');
+
+  const refused=compileRoomScore(bare,{
+    schema:'roroomom.room-score/v0',
+    title:'Too early',
+    clock:'lego:2:audio-player',
+    mediaTracks:[{instrument:'lego:2:audio-player',offsetMs:0}],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues:[{atMs:0,fromLine:1,toLine:1}],
+    },
+  });
+  assert.equal(refused.ok,false);
+  assert.equal(refused.code,'unresolved-score-clock');
+
+  const {room}=await resolvedScoreRoom('private lyric\nsecond line');
+  const receipt=exportEncounterReceipt(room);
+  assert.equal(receipt.resolvedText['lego:3:text-sheet'].lineCount,2);
+  assert.equal('text' in receipt.resolvedText['lego:3:text-sheet'],false);
+  assert.equal(JSON.stringify(receipt).includes('private lyric'),false);
 });
