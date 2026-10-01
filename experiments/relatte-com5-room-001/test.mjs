@@ -7,13 +7,16 @@ import {
   acceptLocalTextBytes,
   acceptMediaResolution,
   actEncounter,
+  actRoomScore,
   compileRoomScore,
+  createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
   openNavigator,
   prepareMediaResolution,
   prepareTextResolution,
+  projectPerformanceMemory,
   roomScoreFrame,
   useInstrument,
 } from './room.mjs';
@@ -397,4 +400,144 @@ test('Room Score refuses unresolved tracks and encounter receipt omits lyric pla
   assert.equal(receipt.resolvedText['lego:3:text-sheet'].lineCount,2);
   assert.equal('text' in receipt.resolvedText['lego:3:text-sheet'],false);
   assert.equal(JSON.stringify(receipt).includes('private lyric'),false);
+});
+
+
+async function performedScoreRoom({
+  lyrics='Line one\nLine two\nLine three\nLine four',
+  encounterId='room-encounter:performed-memory',
+}={}){
+  const {room:resolved}=await resolvedScoreRoom(lyrics);
+  const room={...resolved,encounterId};
+  const scored=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:'Remembered performance',
+    clock:'lego:2:audio-player',
+    mediaTracks:[
+      {instrument:'lego:2:audio-player',offsetMs:0},
+      {instrument:'lego:4:video-player',offsetMs:250},
+    ],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues:[
+        {atMs:0,fromLine:1,toLine:2},
+        {atMs:1000,fromLine:3,toLine:4},
+      ],
+    },
+  });
+  return actRoomScore(scored,'CONDUCT');
+}
+
+test('mere playback state cannot become performance memory without a conducted score',async()=>{
+  const {room}=await resolvedScoreRoom();
+  const scored=compileRoomScore(room,{
+    schema:'roroomom.room-score/v0',
+    title:'Compiled but not played',
+    clock:'lego:2:audio-player',
+    mediaTracks:[
+      {instrument:'lego:2:audio-player',offsetMs:0},
+      {instrument:'lego:4:video-player',offsetMs:0},
+    ],
+    lyricTrack:{
+      instrument:'lego:3:text-sheet',
+      cues:[{atMs:0,fromLine:1,toLine:2}],
+    },
+  });
+
+  const memory=await createPerformanceMemory(scored,{
+    verdict:'keep',
+    reopenRequested:false,
+  });
+  assert.equal(memory.ok,false);
+  assert.equal(memory.code,'not-performed');
+});
+
+test('conducted score plus explicit human verdict becomes deterministic receipt-backed memory',async()=>{
+  const room=await performedScoreRoom();
+  const memory=await createPerformanceMemory(room,{
+    verdict:'weird',
+    reopenRequested:true,
+  });
+
+  assert.equal(memory.schema,'roroomom.performance-memory/v0');
+  assert.match(memory.memorySha256,/^[a-f0-9]{64}$/);
+  assert.equal(memory.memoryId,'memory:'+memory.memorySha256);
+  assert.equal(memory.fact.sourceSubject,room.sourceSubject);
+  assert.equal(memory.fact.performedBlocks.length,3);
+  assert.equal(memory.humanVerdict.verdict,'weird');
+  assert.equal(memory.humanVerdict.reopenRequested,true);
+  assert.equal(memory.learning.authority,'derived-from-receipt-and-explicit-human-verdict');
+  assert.ok(memory.boundary.includes('PLAYBACK != PREFERENCE'));
+  assert.equal(JSON.stringify(memory).includes('Line one'),false);
+
+  const replay=await createPerformanceMemory(room,{
+    verdict:'weird',
+    reopenRequested:true,
+  });
+  assert.equal(replay.memorySha256,memory.memorySha256);
+});
+
+test('particular and Lego each remember attributable performances without becoming authority',async()=>{
+  const room=await performedScoreRoom();
+  const memory=await createPerformanceMemory(room,{
+    verdict:'keep',
+    reopenRequested:true,
+  });
+
+  const subjectMemory=await projectPerformanceMemory([memory],{
+    sourceSubject:room.sourceSubject,
+  });
+  assert.equal(subjectMemory.playCount,1);
+  assert.equal(subjectMemory.verdictCounts.keep,1);
+  assert.equal(subjectMemory.prophecy.authority,'imagined-non-authoritative');
+  assert.equal(subjectMemory.prophecy.invitations[0].kind,'REOPEN');
+
+  const songMemory=await projectPerformanceMemory([memory],{
+    sourceRef:'sha256:'+'1'.repeat(64),
+  });
+  assert.equal(songMemory.playCount,1);
+  assert.equal(songMemory.memoryRefs[0],memory.memoryId);
+  assert.ok(songMemory.boundary.includes('PLAY COUNT != PREFERENCE'));
+
+  const unrelated=await projectPerformanceMemory([memory],{
+    sourceRef:'sha256:'+'9'.repeat(64),
+  });
+  assert.equal(unrelated.playCount,0);
+  assert.deepEqual(unrelated.prophecy.invitations,[]);
+});
+
+test('memory projection excludes locally altered capsules',async()=>{
+  const room=await performedScoreRoom();
+  const memory=await createPerformanceMemory(room,{
+    verdict:'keep',
+    reopenRequested:false,
+  });
+  const forged=structuredClone(memory);
+  forged.humanVerdict.verdict='compost';
+
+  const projection=await projectPerformanceMemory([forged],{
+    sourceSubject:room.sourceSubject,
+  });
+  assert.equal(projection.playCount,0);
+  assert.deepEqual(projection.memoryRefs,[]);
+});
+
+test('three witnessed performances may invite contrast but never trigger it',async()=>{
+  const memories=[];
+  for(const [index,verdict] of ['keep','weird','compost'].entries()){
+    const room=await performedScoreRoom({encounterId:'room-encounter:memory-'+index});
+    memories.push(await createPerformanceMemory(room,{
+      verdict,
+      reopenRequested:index===1,
+    }));
+  }
+
+  const projection=await projectPerformanceMemory(memories,{
+    sourceSubject:memories[0].fact.sourceSubject,
+  });
+  assert.equal(projection.playCount,3);
+  assert.deepEqual(projection.verdictCounts,{keep:1,weird:1,compost:1});
+  assert.ok(projection.prophecy.invitations.some(item=>item.kind==='CONTRAST'));
+  assert.ok(projection.prophecy.invitations.every(item=>item.authority==='invitation-only'));
+  assert.equal(projection.authority,'none');
 });
