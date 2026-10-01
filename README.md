@@ -44,6 +44,28 @@ The six contract tests exercise bounded effectful export, read-only Workbench se
 
 **Design law:** available ≠ authorized; prepared ≠ executed; accepted ≠ completed; a Room receipt ≠ a source project's receipt. A room can hold the instruments without claiming to be their owner.
 
+## reLATTE × COM⁵ Room 001
+
+The experimental [reLATTE × COM⁵ × ROroomOM room](experiments/relatte-com5-room-001/README.md) composes the walkable reLATTE navigator with the Room's local instrument-deck model.
+
+One reLATTE particular exposes five COM⁵ doors; entering a door creates a fresh Room-local encounter and Magic-Lego instrument deck without importing source authority.
+
+```text
+reLATTE particular
+→ COM⁵ door
+→ ROroomOM instrument composition
+→ local encounter
+→ local receipt
+```
+
+A COMPOSE projection may assemble addressed song/audio, text/lyric, video, image, or document instruments when the source projection actually supplies those media refs. COMMUTE and COMPUTE produce different local rooms over the same source subject.
+
+```text
+SOURCE SUBJECT != LOCAL ENCOUNTER
+MEDIA REF != MEDIA CONTENT
+ROOM RECEIPT != reLATTE RECEIPT
+```
+
 ## ROOM-006 — opt-in effectful rejoining experiment
 
 The separate experimental [Rejoining Room browser setup](experiments/rejoining_room_006/BROWSER-SETUP.md) runs at `/rejoin` through `experiments/rejoining_room_006/bridge006.py`, only when independently pinned WORLDSEED-004 sources and the exact audited code package are supplied by the local operator. The existing Room-005 bridge and offline page are unchanged. Imported joint history never grants execution authority; the new effect is one Room-owned create-only artifact with an explicit preview, single-use local confirmation, and durable restart reconciliation. This remains a local demonstration, **not** authenticated two-person consent or project-native execution.
