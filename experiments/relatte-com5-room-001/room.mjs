@@ -297,6 +297,19 @@ export function makeNavigationRequest(room, targetSubject) {
 
 const SHA_ADDRESS = /^sha256:([a-f0-9]{64})$/;
 
+const MEDIA_RESOLVER_CONTRACTS = Object.freeze({
+  'audio-player': Object.freeze({
+    organ:'autodiscography-vault.audio-resolver-v0',
+    expectedStatuses:Object.freeze(['resolved-verified']),
+    expectedMediaTypes:Object.freeze(['audio/wav','audio/mpeg']),
+  }),
+  'video-player': Object.freeze({
+    organ:'haunted-blender.accepted-video-resolver-v0',
+    expectedStatuses:Object.freeze(['resolved-filmmaker-accepted-private-take']),
+    expectedMediaTypes:Object.freeze(['video/mp4']),
+  }),
+});
+
 export function prepareMediaResolution(room, localInstrumentId) {
   if (!room?.ok || room.status !== 'local-encounter' || !Array.isArray(room.instrumentDeck))
     return fail('room-not-open','Enter a COM5 door before resolving media.');
@@ -306,16 +319,21 @@ export function prepareMediaResolution(room, localInstrumentId) {
   const instrument=room.instrumentDeck.find(item=>item.localInstrumentId===localInstrumentId);
   if (!instrument)
     return fail('unknown-instrument','Instrument is not in this local deck.');
-  if (instrument.kind !== 'audio-player')
-    return fail('not-audio-instrument','Only audio-player instruments use the first Vault resolver.');
+
+  const contract=MEDIA_RESOLVER_CONTRACTS[instrument.kind];
+  if (!contract)
+    return fail('no-media-resolver','No bounded resolver is defined for this instrument kind yet.');
   if (typeof instrument.sourceRef !== 'string' || !SHA_ADDRESS.test(instrument.sourceRef))
-    return fail('unaddressed-audio','Audio resolution requires a sha256 content address.');
+    return fail('unaddressed-media','Media resolution requires a sha256 content address.');
 
   return {
     schema:'roroomom.media-resolution-request/v0',
     localInstrumentId,
+    instrumentKind:instrument.kind,
     address:instrument.sourceRef,
-    expectedMediaTypes:['audio/wav','audio/mpeg'],
+    expectedOrgan:contract.organ,
+    expectedStatuses:[...contract.expectedStatuses],
+    expectedMediaTypes:[...contract.expectedMediaTypes],
     authority:'none',
     boundary:[
       'MEDIA REQUEST != RESOLUTION',
@@ -350,8 +368,8 @@ export function acceptMediaResolution(room, localInstrumentId, resolution) {
   const digest=match?.[1];
   if (!digest
     || !plain(resolution)
-    || resolution.organ!=='autodiscography-vault.audio-resolver-v0'
-    || resolution.status!=='resolved-verified'
+    || resolution.organ!==request.expectedOrgan
+    || !request.expectedStatuses.includes(resolution.status)
     || resolution.address!==request.address
     || resolution.sha256!==digest
     || !request.expectedMediaTypes.includes(resolution.mediaType)
@@ -359,7 +377,7 @@ export function acceptMediaResolution(room, localInstrumentId, resolution) {
     || resolution.byteLength<=0
     || resolution.authority!=='none'
     || !validPlaybackUrl(resolution.playbackUrl,digest)) {
-    return fail('media-resolution-mismatch','Vault media result does not match the requested audio instrument.');
+    return fail('media-resolution-mismatch','Media organ result does not match the requested local instrument.');
   }
 
   const accepted={
@@ -370,6 +388,7 @@ export function acceptMediaResolution(room, localInstrumentId, resolution) {
     mediaType:resolution.mediaType,
     byteLength:resolution.byteLength,
     playbackUrl:resolution.playbackUrl,
+    ...(resolution.distributionAuthorized===false ? {distributionAuthorized:false} : {}),
     authority:'none',
   };
 
