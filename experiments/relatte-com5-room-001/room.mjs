@@ -854,10 +854,10 @@ export async function createPerformanceMemory(room, humanVerdict) {
   };
 }
 
-function validPerformanceMemory(memory) {
+function validPerformanceMemoryShape(memory) {
   return plain(memory)
     && memory.schema===PERFORMANCE_MEMORY_SCHEMA
-    && strictText(memory.memorySha256,64)
+    && /^[a-f0-9]{64}$/.test(memory.memorySha256 ?? '')
     && memory.memoryId==='memory:'+memory.memorySha256
     && plain(memory.fact)
     && strictText(memory.fact.sourceSubject,1000)
@@ -869,13 +869,26 @@ function validPerformanceMemory(memory) {
     && memory.authority==='none';
 }
 
+async function validPerformanceMemory(memory) {
+  if (!validPerformanceMemoryShape(memory)) return false;
+  const core={
+    schema:memory.schema,
+    fact:memory.fact,
+    humanVerdict:memory.humanVerdict,
+    learning:memory.learning,
+    boundary:memory.boundary,
+    authority:memory.authority,
+  };
+  return await hashCanonicalLocal(core)===memory.memorySha256;
+}
+
 function memoryMatches(memory,{sourceSubject=null,sourceRef=null}={}) {
   if (sourceSubject!==null && memory.fact.sourceSubject!==sourceSubject) return false;
   if (sourceRef!==null && !memory.fact.performedBlocks.some(block=>block.sourceRef===sourceRef)) return false;
   return sourceSubject!==null || sourceRef!==null;
 }
 
-export function projectPerformanceMemory(memories, selector={}) {
+export async function projectPerformanceMemory(memories, selector={}) {
   if (!Array.isArray(memories))
     return fail('invalid-memory-ledger','Performance memory ledger must be an array.');
   if (!plain(selector)
@@ -884,7 +897,10 @@ export function projectPerformanceMemory(memories, selector={}) {
     || (selector.sourceSubject===undefined && selector.sourceRef===undefined))
     return fail('invalid-memory-selector','Select a sourceSubject and/or sourceRef.');
 
-  const valid=memories.filter(validPerformanceMemory);
+  const valid=[];
+  for (const memory of memories) {
+    if (await validPerformanceMemory(memory)) valid.push(memory);
+  }
   const selected=valid.filter(memory=>memoryMatches(memory,{
     sourceSubject:selector.sourceSubject ?? null,
     sourceRef:selector.sourceRef ?? null,
