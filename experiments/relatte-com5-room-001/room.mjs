@@ -174,6 +174,7 @@ export function enterDoor(navigator, role, approved, localId=null) {
     sourceAuthority:'none',
     sourceEncounter:clone(navigator.sourceEncounter),
     sourceObservations:clone(door.observations),
+    sourceNeighbors:[...navigator.neighbors],
     instrumentDeck,
     phase:'entered',
     localHistory:[{
@@ -264,3 +265,29 @@ export function exportEncounterReceipt(room) {
 }
 
 export { ROLES };
+
+
+export function makeNavigationRequest(room, targetSubject) {
+  if (!room?.ok || room.status !== 'local-encounter' || !Array.isArray(room.sourceNeighbors))
+    return fail('room-not-open','Enter a COM5 door before requesting navigator movement.');
+  if (!strictText(targetSubject,1000))
+    return fail('invalid-target','Choose a bounded destination subject.');
+  if (!room.sourceNeighbors.includes(targetSubject))
+    return fail('not-source-neighbor','The source projection did not expose that subject as a neighbor.');
+
+  return {
+    format:'roroomom.relatte-navigation-request/v0',
+    version:0,
+    source_subject:room.sourceSubject,
+    requested_subject:targetSubject,
+    source_door:room.sourceDoor,
+    encounter_id:room.encounterId,
+    authority:'none',
+    requested_action:'recenter-if-verified-neighbor',
+    boundary:[
+      'ROOM REQUEST != VERIFIED ROAD',
+      'REQUESTED SUBJECT != AUTHORIZED SUBJECT',
+      'reLATTE MUST REVERIFY NEIGHBOR',
+    ],
+  };
+}

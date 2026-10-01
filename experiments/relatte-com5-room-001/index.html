@@ -15,15 +15,18 @@ nav{border-right:1px solid #555}
 .panel{border:1px solid #666;padding:.8rem;margin-bottom:.8rem}
 .block{border:2px solid #aaa;padding:.85rem;margin:.5rem 0;overflow-wrap:anywhere}
 .doors{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.4rem}
-button,input{font:inherit}
+button,input,select{font:inherit}
 button{padding:.55rem .6rem;cursor:pointer}
+input,select{padding:.45rem;width:100%;margin:.3rem 0}
 .door.active{outline:2px solid currentColor}
 .lego{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.65rem}
 .instrument{border:1px solid #888;padding:.75rem;min-height:140px;overflow-wrap:anywhere}
 .instrument button{margin-top:.5rem}
 .fog{opacity:.65}
 .good{font-weight:700}
-.log{white-space:pre-wrap;max-height:220px;overflow:auto}
+.log{white-space:pre-wrap;max-height:260px;overflow:auto}
+.row{display:flex;gap:.4rem;flex-wrap:wrap}
+.row button{flex:1}
 @media(max-width:850px){.shell{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid #555}.doors{grid-template-columns:1fr}}
 </style>
 </head>
@@ -49,6 +52,8 @@ button{padding:.55rem .6rem;cursor:pointer}
   <div class="panel">
     <strong>NEIGHBORS</strong>
     <div id="neighbors" class="fog">(none loaded)</div>
+    <select id="neighborSelect" disabled><option value="">Choose neighbor</option></select>
+    <button id="navRequest" disabled>Ask reLATTE to re-center</button>
   </div>
 </nav>
 <main>
@@ -56,7 +61,24 @@ button{padding:.55rem .6rem;cursor:pointer}
     <strong>ROroomOM LOCAL ENCOUNTER</strong>
     <div id="encounter" class="fog">Choose a door.</div>
   </div>
+
   <div id="deck" class="lego"></div>
+
+  <div class="panel">
+    <strong>LOCAL ORGAN DOCK · STATIC WORKBENCH</strong>
+    <div id="organStatus" class="fog">Workbench organ not checked.</div>
+    <div class="row">
+      <button id="organConnect">Connect read-only Source Inspector</button>
+    </div>
+    <select id="organRepo" disabled><option value="">Choose discovered repo</option></select>
+    <input id="organPath" value="README.md" aria-label="Repository-relative source path">
+    <div class="row">
+      <button id="organPrepare" disabled>Prepare exact source read</button>
+      <button id="organInspect" disabled>Inspect prepared source</button>
+    </div>
+    <div id="organOutput" class="log fog">(no inspected source)</div>
+  </div>
+
   <div class="panel">
     <button id="leave" disabled>Leave</button>
     <button id="return" disabled>Return</button>
@@ -69,25 +91,55 @@ button{padding:.55rem .6rem;cursor:pointer}
 </main>
 </div>
 <script type="module">
-import {actEncounter,enterDoor,exportEncounterReceipt,openNavigator,useInstrument} from './room.mjs';
+import {
+  actEncounter,
+  enterDoor,
+  exportEncounterReceipt,
+  makeNavigationRequest,
+  openNavigator,
+  useInstrument
+} from './room.mjs';
 
 let navigatorState=null;
 let room=null;
+let organTicket=null;
 
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
+function saveJson(filename,value){
+  const blob=new Blob([JSON.stringify(value,null,2)+'\n'],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function renderNavigator(){
   doors.innerHTML='';
+  const select=q('#neighborSelect');
+  select.innerHTML='<option value="">Choose neighbor</option>';
+
   if(!navigatorState?.ok){
     block.textContent='No particular loaded.';
     neighbors.textContent='(none loaded)';
+    select.disabled=true;
+    q('#navRequest').disabled=true;
     return;
   }
+
   block.className='block';
   block.innerHTML='<strong>'+esc(navigatorState.sourceSubject)+'</strong><br><span class="fog">held projection · authority: none</span>';
   neighbors.textContent=navigatorState.neighbors.length?navigatorState.neighbors.join('\n'):'(none in this projection)';
+
+  for(const ref of navigatorState.neighbors){
+    const option=document.createElement('option');
+    option.value=ref; option.textContent=ref; select.append(option);
+  }
+  select.disabled=navigatorState.neighbors.length===0;
+  q('#navRequest').disabled=!room?.ok || navigatorState.neighbors.length===0;
 
   for(const door of navigatorState.doors){
     const button=document.createElement('button');
@@ -98,6 +150,7 @@ function renderNavigator(){
       if(!next.ok){alert(next.explanation);return;}
       room=next;
       renderRoom();
+      renderNavigator();
     };
     doors.append(button);
   }
@@ -107,8 +160,13 @@ function renderRoom(){
   deck.innerHTML='';
   if(!room?.ok){
     encounter.textContent='Choose a door.';
+    q('#leave').disabled=true;
+    q('#return').disabled=true;
+    q('#receipt').disabled=true;
+    q('#navRequest').disabled=true;
     return;
   }
+
   encounter.className='';
   encounter.innerHTML='<strong>'+esc(room.sourceDoor)+'</strong> · '+esc(room.encounterId)+'<br><span class="fog">same source: '+esc(room.sourceSubject)+' · source mutated: no</span>';
 
@@ -130,8 +188,16 @@ function renderRoom(){
   q('#leave').disabled=room.phase==='away';
   q('#return').disabled=room.phase!=='away';
   q('#receipt').disabled=false;
+  q('#navRequest').disabled=!q('#neighborSelect').value;
   log.className='log';
   log.textContent=room.localHistory.map((item,index)=>String(index+1).padStart(2,'0')+'  '+JSON.stringify(item)).join('\n');
+}
+
+async function organFetch(path,options={}){
+  const response=await fetch(path,options);
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.detail ?? 'Organ request failed.');
+  return data;
 }
 
 q('#sample').onclick=async()=>{
@@ -139,6 +205,7 @@ q('#sample').onclick=async()=>{
   navigatorState=openNavigator(await response.json());
   room=null;renderNavigator();renderRoom();
 };
+
 q('#file').onchange=async event=>{
   const file=event.target.files?.[0];
   if(!file)return;
@@ -146,16 +213,79 @@ q('#file').onchange=async event=>{
   if(!navigatorState.ok){alert(navigatorState.explanation);return;}
   room=null;renderNavigator();renderRoom();
 };
+
+q('#neighborSelect').onchange=()=>{q('#navRequest').disabled=!room?.ok || !q('#neighborSelect').value;};
+q('#navRequest').onclick=()=>{
+  const target=q('#neighborSelect').value;
+  const request=makeNavigationRequest(room,target);
+  if(request.ok===false){alert(request.explanation);return;}
+  saveJson('roroomom-relatte-navigation-request.json',request);
+};
+
 q('#leave').onclick=()=>{const next=actEncounter(room,'LEAVE');if(next.ok){room=next;renderRoom();}};
 q('#return').onclick=()=>{const next=actEncounter(room,'RETURN');if(next.ok){room=next;renderRoom();}};
-q('#receipt').onclick=()=>{
-  const data=JSON.stringify(exportEncounterReceipt(room),null,2);
-  const blob=new Blob([data],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='roroomom-relatte-com5-local-receipt.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
+q('#receipt').onclick=()=>saveJson('roroomom-relatte-com5-local-receipt.json',exportEncounterReceipt(room));
+
+q('#organConnect').onclick=async()=>{
+  try{
+    const [status,catalog]=await Promise.all([
+      organFetch('/api/organs/workbench/status'),
+      organFetch('/api/organs/workbench/repos')
+    ]);
+    q('#organStatus').className=status.identity?.connected?'good':'fog';
+    q('#organStatus').textContent=status.identity?.connected
+      ? 'Static Workbench connected · read-only Source Inspector available.'
+      : 'Workbench unavailable or version mismatch.';
+
+    const select=q('#organRepo');
+    select.innerHTML='<option value="">Choose discovered repo</option>';
+    for(const repo of catalog.repositories ?? []){
+      const option=document.createElement('option');
+      option.value=repo.repo_path;
+      option.textContent=repo.name+' @ '+repo.head+(repo.dirty?' · dirty':'');
+      select.append(option);
+    }
+    select.disabled=!(status.identity?.connected);
+    q('#organPrepare').disabled=select.disabled;
+  }catch(error){
+    q('#organStatus').className='fog';
+    q('#organStatus').textContent='Workbench organ unavailable. Run organ_bridge.py for live local inspection.';
+  }
+};
+
+q('#organPrepare').onclick=async()=>{
+  try{
+    const result=await organFetch('/api/organs/workbench/prepare-source',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Room-Action':'explicit-user-inspect'},
+      body:JSON.stringify({repo_name:q('#organRepo').value,source_path:q('#organPath').value})
+    });
+    organTicket=result.ticket;
+    q('#organInspect').disabled=false;
+    q('#organOutput').className='log';
+    q('#organOutput').textContent='PREPARED\n'+JSON.stringify({
+      repository:result.repository,
+      source_path:result.source_path,
+      contentSha256:result.contentSha256,
+      bytes:result.bytes,
+      preview:result.preview,
+      authority:result.authority
+    },null,2);
+  }catch(error){alert(error.message);}
+};
+
+q('#organInspect').onclick=async()=>{
+  try{
+    const result=await organFetch('/api/organs/workbench/inspect-source',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Room-Action':'explicit-user-inspect'},
+      body:JSON.stringify({ticket:organTicket})
+    });
+    organTicket=null;
+    q('#organInspect').disabled=true;
+    q('#organOutput').className='log';
+    q('#organOutput').textContent='INSPECTED ONCE\n'+JSON.stringify(result,null,2);
+  }catch(error){alert(error.message);}
 };
 
 renderNavigator();renderRoom();
