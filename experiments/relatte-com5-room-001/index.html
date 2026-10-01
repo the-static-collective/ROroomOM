@@ -163,6 +163,21 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
   </div>
 
   <div class="panel">
+    <strong>GUEST PORT · MANY MINDS, ONE OFFER, SEPARATE CROSSINGS</strong>
+    <div id="guestStatus" class="fog">Make a Human Offer before opening Guest Port.</div>
+    <div class="row">
+      <button id="guestCreate" disabled>Create Guest Packet</button>
+      <button id="guestExport" disabled>Export Guest Packet</button>
+    </div>
+    <textarea id="guestPacketView" readonly aria-label="Guest Port packet">(no Guest Packet yet)</textarea>
+    <label>Import one or more guest response JSON files
+      <input id="guestImport" type="file" accept="application/json,.json" multiple disabled>
+    </label>
+    <div id="guestResponses" class="lego"></div>
+    <p class="fog">TRANSPORT ≠ PARTICIPANT · MULTIPLE ECHOES ≠ CONSENSUS · PROPOSAL SET ≠ DECISION</p>
+  </div>
+
+  <div class="panel">
     <strong>LOCAL ORGAN DOCK · AUTODISCOGRAPHY VAULT</strong>
     <div id="vaultStatus" class="fog">Vault audio resolver not checked.</div>
     <button id="vaultConnect">Check verified-audio resolver</button>
@@ -210,9 +225,11 @@ import {
   actRoomScore,
   compileRoomScore,
   createAiOfferEcho,
+  createGuestPortPacket,
   createAiRoomScoreProposal,
   createHumanOffer,
   createPerformanceMemory,
+  importGuestPortResponse,
   enterDoor,
   exportEncounterReceipt,
   makeNavigationRequest,
@@ -234,6 +251,8 @@ let activeHumanOffer=null;
 let activeAiEcho=null;
 let activeAiProposal=null;
 let activeAiProposalState='EMPTY';
+let activeGuestPacket=null;
+let guestImports=[];
 
 const q=id=>document.querySelector(id);
 const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter=q('#encounter'), deck=q('#deck'), log=q('#log');
@@ -241,6 +260,7 @@ const scoreStatus=q('#scoreStatus'), scoreSpec=q('#scoreSpec'), scoreWindow=q('#
 const memoryStatus=q('#memoryStatus'), memoryOutput=q('#memoryOutput');
 const crossingStatus=q('#crossingStatus'), crossingCard=q('#crossingCard'), crossingReceipt=q('#crossingReceipt');
 const humanOfferCard=q('#humanOfferCard'), aiEchoCard=q('#aiEchoCard');
+const guestStatus=q('#guestStatus'), guestPacketView=q('#guestPacketView'), guestResponses=q('#guestResponses');
 const MEMORY_KEY='roroomom.performance-memory.v0';
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
@@ -518,7 +538,7 @@ function renderRoom(){
 q('#sample').onclick=async()=>{
   const response=await fetch('./fixture-enterable-song.json');
   navigatorState=openNavigator(await response.json());
-  room=null;renderNavigator();renderRoom();renderCrossingRail();
+  room=null;renderNavigator();renderRoom();renderCrossingRail();renderGuestPort();
 };
 
 q('#file').onchange=async event=>{
@@ -647,8 +667,11 @@ function resetCrossingAfterScoreChange(){
   activeAiEcho=null;
   activeAiProposal=null;
   activeAiProposalState='EMPTY';
+  activeGuestPacket=null;
+  guestImports=[];
   crossingReceipt.className='log fog';
   crossingReceipt.textContent='(no human↔AI crossing receipt yet)';
+  renderGuestPort();
 }
 
 function renderCrossingRail(){
@@ -789,6 +812,96 @@ function renderCrossingRail(){
   q('#aiRefuse').disabled=resolved;
 }
 
+function renderGuestPort(){
+  guestResponses.innerHTML='';
+  q('#guestCreate').disabled=!room?.roomScore || !activeHumanOffer;
+  q('#guestExport').disabled=!activeGuestPacket;
+  q('#guestImport').disabled=!activeGuestPacket;
+
+  if(!activeGuestPacket){
+    guestStatus.className='fog';
+    guestStatus.textContent=activeHumanOffer
+      ? 'Human Offer ready. Create one transport-neutral Guest Packet.'
+      : 'Make a Human Offer before opening Guest Port.';
+    guestPacketView.value='(no Guest Packet yet)';
+    return;
+  }
+
+  guestStatus.className='good';
+  guestStatus.textContent='Guest Packet '+activeGuestPacket.guestPortId+' · imported responses: '+guestImports.length;
+  guestPacketView.value=JSON.stringify(activeGuestPacket,null,2);
+
+  for(const entry of guestImports){
+    const card=document.createElement('section');
+    card.className='instrument';
+    const response=entry.response;
+    const imported=entry.imported;
+    const proposal=response.proposal;
+    card.innerHTML='<strong>'+esc(response.participant.label ?? response.participant.id)+'</strong><br>'
+      +'<span class="fog">'+esc(response.participant.provider ?? 'transport unspecified')+' · '+esc(response.responseId)+'</span>';
+
+    const echo=document.createElement('pre');
+    echo.className='log';
+    echo.textContent='ECHO\n'+response.echo.understanding
+      +'\n\nUNCERTAINTY\n'+(response.echo.uncertainties.join('\n') || '(none)')
+      +'\n\nPROPOSAL\n'+(proposal
+        ? proposal.instrument+': '+proposal.fromValue+' → '+proposal.value+' ms\n'+proposal.rationale
+        : '(echo only)');
+    card.append(echo);
+
+    if(imported?.proposal){
+      const open=document.createElement('button');
+      open.textContent='Open this crossing';
+      open.onclick=()=>{
+        activeAiProposal=imported.proposal;
+        activeAiProposalState='PENDING';
+        crossingReceipt.className='log fog';
+        crossingReceipt.textContent='(guest proposal opened; awaiting explicit human decision)';
+        renderCrossingRail();
+      };
+      card.append(open);
+    }
+    guestResponses.append(card);
+  }
+}
+
+q('#guestCreate').onclick=async()=>{
+  if(!room?.roomScore || !activeHumanOffer)return;
+  const packet=await createGuestPortPacket(room,loadMemoryLedger(),activeHumanOffer);
+  if(packet.ok===false){alert(packet.explanation);return;}
+  activeGuestPacket=packet;
+  guestImports=[];
+  renderGuestPort();
+};
+
+q('#guestExport').onclick=()=>{
+  if(activeGuestPacket)saveJson('roroomom-guest-port.json',activeGuestPacket);
+};
+
+q('#guestImport').onchange=async event=>{
+  if(!activeGuestPacket || !activeHumanOffer)return;
+  const files=[...(event.target.files ?? [])];
+  for(const file of files){
+    try{
+      const response=JSON.parse(await file.text());
+      const imported=await importGuestPortResponse(
+        room,loadMemoryLedger(),activeHumanOffer,activeGuestPacket,response
+      );
+      if(imported.ok===false){
+        alert(file.name+': '+imported.explanation);
+        continue;
+      }
+      if(!guestImports.some(item=>item.response?.responseId===response.responseId)){
+        guestImports.push({response,imported});
+      }
+    }catch(error){
+      alert(file.name+': invalid Guest Response JSON: '+error.message);
+    }
+  }
+  event.target.value='';
+  renderGuestPort();
+};
+
 q('#humanOfferMake').onclick=async()=>{
   if(!room?.roomScore)return;
   const memoryEnabled=q('#offerMemory').checked;
@@ -811,9 +924,12 @@ q('#humanOfferMake').onclick=async()=>{
   activeAiEcho=null;
   activeAiProposal=null;
   activeAiProposalState='EMPTY';
+  activeGuestPacket=null;
+  guestImports=[];
   crossingReceipt.className='log fog';
   crossingReceipt.textContent='(Human Offer created; awaiting AI Echo)';
   renderCrossingRail();
+  renderGuestPort();
 };
 
 q('#aiEchoMake').onclick=async()=>{
