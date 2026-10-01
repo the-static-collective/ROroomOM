@@ -1687,8 +1687,18 @@ async function verifiedGuestResponse(packet,response) {
     || response.guestPortId!==packet.guestPortId
     || response.guestPortSha256!==packet.guestPortSha256
     || response.authority!=='guest-response-only'
-    || !validGuestParticipant(response.participant))
+    || !validGuestParticipant(response.participant)
+    || !plain(response.echo)
+    || response.echo.authority!=='echo-only'
+    || response.echo.participant?.id!==response.participant.id)
     return false;
+
+  if (canonicalJson(response.echo.capabilitiesHeard)!==canonicalJson(packet.humanOffer.capabilities)
+    || canonicalJson(response.echo.offeredHeard)!==canonicalJson(packet.humanOffer.offered)
+    || canonicalJson(response.echo.protectedHeard)!==canonicalJson(packet.humanOffer.protected)
+    || canonicalJson(response.echo.memoryObserved)!==canonicalJson(packet.memoryView))
+    return false;
+
   const core={
     schema:response.schema,
     guestPortId:response.guestPortId,
