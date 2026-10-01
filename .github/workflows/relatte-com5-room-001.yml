@@ -1,9 +1,9 @@
-name: reLATTE COM5 Room 007 human AI crossing contract
+name: reLATTE COM5 Room 008 Offer Echo Cross contract
 
 on:
   push:
     branches:
-      - experiment/relatte-com5-room-007-human-ai-crossing
+      - experiment/relatte-com5-room-008-offer-echo-cross
     paths:
       - 'experiments/relatte-com5-room-001/**'
       - '.github/workflows/relatte-com5-room-001.yml'
@@ -258,6 +258,13 @@ jobs:
       - name: Cross human and AI over real Room memory
         run: |
           node experiments/relatte-com5-room-001/human-ai-crossing-contract.mjs \
+            vault-descriptor.json \
+            blender-descriptor.json \
+            room-score-lyrics.txt
+
+      - name: Cross Human Offer through AI Echo before proposal
+        run: |
+          node experiments/relatte-com5-room-001/offer-echo-cross-contract.mjs \
             vault-descriptor.json \
             blender-descriptor.json \
             room-score-lyrics.txt
