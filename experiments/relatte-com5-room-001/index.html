@@ -107,20 +107,51 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
   </div>
 
   <div class="panel crossing-rail">
-    <strong>HUMAN ↔ AI CROSSING RAIL</strong>
-    <div id="crossingStatus" class="fog">Compile a Room Score before staging an AI proposal.</div>
+    <strong>HUMAN ↔ AI CROSSING RAIL · OFFER / ECHO / CROSS</strong>
+    <div id="crossingStatus" class="fog">Compile a Room Score before making a Human Offer.</div>
+
     <div class="crossing-stage">
-      <strong>AI PARTICIPANT → PROPOSAL</strong>
+      <strong>1 · HUMAN → OFFER</strong>
+      <textarea id="humanIntent" aria-label="Human intent">Make this stranger, but preserve the song, lyrics, video source, media bytes, and history. You may propose a nearby local timing mutation only.</textarea>
+      <div class="row">
+        <label><input id="offerAudio" type="checkbox" checked> offer song</label>
+        <label><input id="offerVideo" type="checkbox" checked> offer video</label>
+        <label><input id="offerText" type="checkbox" checked> offer text</label>
+      </div>
+      <div class="row">
+        <label><input id="offerMemory" type="checkbox" checked> allow Play Memory</label>
+        <label><input id="offerKeep" type="checkbox"> KEEP</label>
+        <label><input id="offerWeird" type="checkbox" checked> WEIRD</label>
+        <label><input id="offerCompost" type="checkbox"> COMPOST</label>
+      </div>
+      <label>maximum timing delta (ms)
+        <input id="offerMaxDelta" type="number" min="0" max="600000" step="1" value="500">
+      </label>
+      <button id="humanOfferMake" disabled>Make Human Offer</button>
+    </div>
+    <div id="humanOfferCard" class="crossing-card fog">(no Human Offer yet)</div>
+
+    <div class="crossing-stage">
+      <strong>2 · AI → ECHO</strong>
       <input id="aiParticipant" value="ai:room-score-assistant" aria-label="AI participant id">
       <input id="aiProvider" value="local-specimen" aria-label="AI provider or adapter">
-      <textarea id="aiRationale" aria-label="AI proposal rationale">Use the visible Play Memory as context, but change only one local timing value. Do not alter any source, media bytes, lyric cues, or history.</textarea>
+      <textarea id="aiUnderstanding" aria-label="AI echo understanding">I understand that I may inspect only the offered Room Score materials, use only explicitly invited Play Memory, and propose one bounded media timing adjustment. I may not replace sources, alter lyrics, publish, or navigate elsewhere.</textarea>
+      <textarea id="aiUncertainties" aria-label="AI echo uncertainties">Exact preferred timing remains a proposal for the human to judge.</textarea>
+      <button id="aiEchoMake" disabled>Create AI Echo</button>
+    </div>
+    <div id="aiEchoCard" class="crossing-card fog">(no AI Echo yet)</div>
+
+    <div class="crossing-stage">
+      <strong>3 · AI → PROPOSAL</strong>
+      <textarea id="aiRationale" aria-label="AI proposal rationale">Use only the permissions and memory visible in the Human Offer and AI Echo. Change one local timing value; preserve every declared invariant.</textarea>
       <select id="aiTrack" aria-label="Room Score media track" disabled><option value="">Choose media track</option></select>
-      <input id="aiOffset" type="number" min="0" max="600000" step="1" value="500" aria-label="Proposed media offset milliseconds">
-      <button id="aiStage" disabled>Stage AI proposal</button>
+      <input id="aiOffset" type="number" min="0" max="600000" step="1" value="750" aria-label="Proposed media offset milliseconds">
+      <button id="aiStage" disabled>Stage AI Proposal</button>
     </div>
     <div id="crossingCard" class="crossing-card fog">(no AI proposal staged)</div>
+
     <div class="crossing-stage">
-      <strong>HUMAN → DECISION</strong>
+      <strong>4 · HUMAN → DECISION</strong>
       <div class="crossing-actions">
         <button id="aiAccept" disabled>ACCEPT</button>
         <button id="aiHold" disabled>HOLD</button>
@@ -128,7 +159,7 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
       </div>
     </div>
     <div id="crossingReceipt" class="log fog">(no human↔AI crossing receipt yet)</div>
-    <p class="fog">AI PARTICIPANT ≠ SYSTEM · PROPOSAL ≠ CONSENT · MEMORY INFLUENCE ≠ PERMISSION</p>
+    <p class="fog">REQUEST ≠ PERMISSION · ECHO ≠ INTENT · PROPOSAL ≠ CONSENT · ACCEPTANCE REQUIRES HUMAN CROSSING</p>
   </div>
 
   <div class="panel">
@@ -178,7 +209,9 @@ import {
   actEncounter,
   actRoomScore,
   compileRoomScore,
+  createAiOfferEcho,
   createAiRoomScoreProposal,
+  createHumanOffer,
   createPerformanceMemory,
   enterDoor,
   exportEncounterReceipt,
@@ -197,6 +230,8 @@ let organTicket=null;
 let vaultConnected=false;
 let blenderConnected=false;
 let scoreAnimation=null;
+let activeHumanOffer=null;
+let activeAiEcho=null;
 let activeAiProposal=null;
 let activeAiProposalState='EMPTY';
 
@@ -205,6 +240,7 @@ const block=q('#block'), doors=q('#doors'), neighbors=q('#neighbors'), encounter
 const scoreStatus=q('#scoreStatus'), scoreSpec=q('#scoreSpec'), scoreWindow=q('#scoreWindow');
 const memoryStatus=q('#memoryStatus'), memoryOutput=q('#memoryOutput');
 const crossingStatus=q('#crossingStatus'), crossingCard=q('#crossingCard'), crossingReceipt=q('#crossingReceipt');
+const humanOfferCard=q('#humanOfferCard'), aiEchoCard=q('#aiEchoCard');
 const MEMORY_KEY='roroomom.performance-memory.v0';
 const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
@@ -348,8 +384,7 @@ function renderRoom(){
     q('#receipt').disabled=true;
     q('#navRequest').disabled=true;
     q('#memoryRemember').disabled=true;
-    activeAiProposal=null;
-    activeAiProposalState='EMPTY';
+    resetCrossingAfterScoreChange();
     renderCrossingRail();
     void refreshMemoryViews();
     return;
@@ -591,6 +626,31 @@ function scoreSpecFromRoom(){
   };
 }
 
+function selectedOfferInstruments(){
+  const ids=[];
+  if(q('#offerAudio').checked)ids.push('lego:2:audio-player');
+  if(q('#offerVideo').checked)ids.push('lego:4:video-player');
+  if(q('#offerText').checked)ids.push('lego:3:text-sheet');
+  return ids;
+}
+
+function selectedMemoryVerdicts(){
+  const values=[];
+  if(q('#offerKeep').checked)values.push('keep');
+  if(q('#offerWeird').checked)values.push('weird');
+  if(q('#offerCompost').checked)values.push('compost');
+  return values;
+}
+
+function resetCrossingAfterScoreChange(){
+  activeHumanOffer=null;
+  activeAiEcho=null;
+  activeAiProposal=null;
+  activeAiProposalState='EMPTY';
+  crossingReceipt.className='log fog';
+  crossingReceipt.textContent='(no human↔AI crossing receipt yet)';
+}
+
 function renderCrossingRail(){
   const trackSelect=q('#aiTrack');
   trackSelect.innerHTML='<option value="">Choose media track</option>';
@@ -607,15 +667,81 @@ function renderCrossingRail(){
     }
   }
 
-  const canStage=Boolean(room?.roomScore);
-  q('#aiStage').disabled=!canStage;
-  trackSelect.disabled=!canStage;
+  const hasScore=Boolean(room?.roomScore);
+  q('#humanOfferMake').disabled=!hasScore;
+  q('#aiEchoMake').disabled=!activeHumanOffer;
+  q('#aiStage').disabled=!activeHumanOffer || !activeAiEcho;
+  trackSelect.disabled=!activeHumanOffer || !activeAiEcho;
+
+  if(activeHumanOffer){
+    humanOfferCard.className='crossing-card';
+    humanOfferCard.textContent=[
+      'HUMAN OFFER',
+      activeHumanOffer.intent,
+      '',
+      'OFFERED',
+      ...activeHumanOffer.offered.map(block=>block.kind+' · '+block.localInstrumentId+' · '+block.sourceRef),
+      '',
+      'MAY',
+      ...activeHumanOffer.capabilities.allowedActions,
+      'max timing delta: '+activeHumanOffer.capabilities.maxOffsetDeltaMs+' ms',
+      '',
+      'MEMORY',
+      activeHumanOffer.memoryPolicy.enabled
+        ? 'allowed verdicts: '+(activeHumanOffer.memoryPolicy.allowedVerdicts.join(', ') || '(none)')
+        : 'not invited',
+      '',
+      'PROTECTED',
+      ...activeHumanOffer.protected,
+      '',
+      'AUTHORITY',
+      activeHumanOffer.authority
+    ].join('\n');
+  }else{
+    humanOfferCard.className='crossing-card fog';
+    humanOfferCard.textContent='(no Human Offer yet)';
+  }
+
+  if(activeAiEcho){
+    aiEchoCard.className='crossing-card';
+    aiEchoCard.textContent=[
+      'AI ECHO',
+      (activeAiEcho.participant.label ?? activeAiEcho.participant.id)+' ['+activeAiEcho.participant.id+']',
+      '',
+      'I HEARD',
+      activeAiEcho.understanding,
+      '',
+      'CAPABILITIES HEARD',
+      ...activeAiEcho.capabilitiesHeard.allowedActions,
+      'max timing delta: '+activeAiEcho.capabilitiesHeard.maxOffsetDeltaMs+' ms',
+      '',
+      'MEMORY I WAS ALLOWED TO OBSERVE',
+      'refs: '+(activeAiEcho.memoryObserved.memoryRefs.join(', ') || '(none)'),
+      'invitations: '+(activeAiEcho.memoryObserved.invitations.map(item=>item.kind).join(', ') || '(none)'),
+      '',
+      'PROTECTED',
+      ...activeAiEcho.protectedHeard,
+      '',
+      'UNCERTAINTIES',
+      ...(activeAiEcho.uncertainties.length?activeAiEcho.uncertainties:['(none)']),
+      '',
+      'AUTHORITY',
+      activeAiEcho.authority
+    ].join('\n');
+  }else{
+    aiEchoCard.className='crossing-card fog';
+    aiEchoCard.textContent='(no AI Echo yet)';
+  }
 
   if(!activeAiProposal){
     crossingStatus.className='fog';
-    crossingStatus.textContent=canStage
-      ? 'Room Score ready. An AI participant may propose one bounded timing change; nothing will execute.'
-      : 'Compile a Room Score before staging an AI proposal.';
+    crossingStatus.textContent=!hasScore
+      ? 'Compile a Room Score before making a Human Offer.'
+      : !activeHumanOffer
+        ? 'Room Score ready. The human must make an explicit Offer first.'
+        : !activeAiEcho
+          ? 'Human Offer exists. The AI participant must Echo it before proposing.'
+          : 'Offer and Echo are bound. The AI may stage one bounded proposal; nothing will execute.';
     crossingCard.className='crossing-card fog';
     crossingCard.textContent='(no AI proposal staged)';
     q('#aiAccept').disabled=true;
@@ -630,8 +756,13 @@ function renderCrossingRail(){
   crossingStatus.textContent='Proposal '+activeAiProposalState+' · authority: '+p.authority;
   crossingCard.className='crossing-card';
   crossingCard.textContent=[
+    'AI PROPOSAL',
     'WHO',
     (p.participant.label ?? p.participant.id)+' ['+p.participant.id+']',
+    '',
+    'BOUND CROSSING',
+    'Human Offer: '+(p.crossingContext?.humanOfferId ?? '(legacy unbound proposal)'),
+    'AI Echo: '+(p.crossingContext?.aiEchoId ?? '(legacy unbound proposal)'),
     '',
     'WHAT IT USED',
     'Room Score: '+p.target.roomScoreSha256,
@@ -649,7 +780,7 @@ function renderCrossingRail(){
     p.invariants.join('\n'),
     '',
     'WHO DECIDES',
-    'Human local decision only.',
+    'Human local decision only.'
   ].join('\n');
 
   const resolved=['ACCEPTED','REFUSED'].includes(activeAiProposalState);
@@ -658,21 +789,66 @@ function renderCrossingRail(){
   q('#aiRefuse').disabled=resolved;
 }
 
-q('#aiStage').onclick=async()=>{
+q('#humanOfferMake').onclick=async()=>{
   if(!room?.roomScore)return;
-  const track=q('#aiTrack').value;
-  const offset=Number(q('#aiOffset').value);
-  const proposal=await createAiRoomScoreProposal(room,loadMemoryLedger(),{
+  const memoryEnabled=q('#offerMemory').checked;
+  const offer=await createHumanOffer(room,{
+    intent:q('#humanIntent').value.trim(),
+    offeredInstruments:selectedOfferInstruments(),
+    allowedActions:[
+      'INSPECT_ROOM_SCORE',
+      ...(memoryEnabled?['READ_PLAY_MEMORY']:[]),
+      'PROPOSE_MEDIA_OFFSET_MS'
+    ],
+    memoryPolicy:{
+      enabled:memoryEnabled,
+      allowedVerdicts:memoryEnabled?selectedMemoryVerdicts():[]
+    },
+    maxOffsetDeltaMs:Number(q('#offerMaxDelta').value)
+  });
+  if(offer.ok===false){alert(offer.explanation);return;}
+  activeHumanOffer=offer;
+  activeAiEcho=null;
+  activeAiProposal=null;
+  activeAiProposalState='EMPTY';
+  crossingReceipt.className='log fog';
+  crossingReceipt.textContent='(Human Offer created; awaiting AI Echo)';
+  renderCrossingRail();
+};
+
+q('#aiEchoMake').onclick=async()=>{
+  if(!room?.roomScore || !activeHumanOffer)return;
+  const echo=await createAiOfferEcho(room,loadMemoryLedger(),activeHumanOffer,{
     participant:{
       id:q('#aiParticipant').value.trim(),
       label:'Room Score AI participant',
       provider:q('#aiProvider').value.trim()
     },
+    understanding:q('#aiUnderstanding').value.trim(),
+    uncertainties:q('#aiUncertainties').value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean)
+  });
+  if(echo.ok===false){alert(echo.explanation);return;}
+  activeAiEcho=echo;
+  activeAiProposal=null;
+  activeAiProposalState='EMPTY';
+  crossingReceipt.className='log fog';
+  crossingReceipt.textContent='(AI Echo created; no proposal has executed)';
+  renderCrossingRail();
+};
+
+q('#aiStage').onclick=async()=>{
+  if(!room?.roomScore || !activeHumanOffer || !activeAiEcho)return;
+  const proposal=await createAiRoomScoreProposal(room,loadMemoryLedger(),{
+    participant:activeAiEcho.participant,
     rationale:q('#aiRationale').value.trim(),
     patch:{
       op:'SET_MEDIA_OFFSET_MS',
-      instrument:track,
-      value:offset
+      instrument:q('#aiTrack').value,
+      value:Number(q('#aiOffset').value)
+    },
+    crossing:{
+      offer:activeHumanOffer,
+      echo:activeAiEcho
     }
   });
   if(proposal.ok===false){alert(proposal.explanation);return;}
@@ -827,8 +1003,7 @@ q('#scoreCompile').onclick=()=>{
     const next=compileRoomScore(room,JSON.parse(scoreSpec.value));
     if(next.ok===false){alert(next.explanation);return;}
     room=next;
-    activeAiProposal=null;
-    activeAiProposalState='EMPTY';
+    resetCrossingAfterScoreChange();
     renderRoom();
     q('#scoreConduct').disabled=false;
     scoreStatus.className='good';
