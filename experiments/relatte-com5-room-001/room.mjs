@@ -1302,11 +1302,8 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
   const current=room.roomScore.mediaTracks.find(track=>track.instrument===spec.patch.instrument);
   if (!current) return fail('invalid-ai-patch','Target media track is absent.');
 
-  let memoryProjection=await projectPerformanceMemory(memories,{
-    sourceSubject:room.sourceSubject,
-  });
-  if (memoryProjection.ok===false) return memoryProjection;
-
+  let memoryProjection=null;
+  let basisSourceRefs=[...new Set(scoredBlocks(room).map(block=>block.sourceRef))].sort();
   let crossingContext=null;
   if (spec.crossing!==undefined) {
     if (!plain(spec.crossing))
@@ -1330,6 +1327,7 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
     if (delta>offer.capabilities.maxOffsetDeltaMs)
       return fail('proposal-exceeds-offer-limit','AI proposal exceeds the human offer timing limit.');
 
+    basisSourceRefs=[...new Set(offer.offered.map(block=>block.sourceRef))].sort();
     memoryProjection={
       schema:PERFORMANCE_MEMORY_PROJECTION_SCHEMA,
       selector:{sourceSubject:room.sourceSubject},
@@ -1354,6 +1352,11 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
       aiEchoId:echo.echoId,
       aiEchoSha256:echo.echoSha256,
     };
+  } else {
+    memoryProjection=await projectPerformanceMemory(memories,{
+      sourceSubject:room.sourceSubject,
+    });
+    if (memoryProjection.ok===false) return memoryProjection;
   }
 
   const core={
@@ -1372,7 +1375,7 @@ export async function createAiRoomScoreProposal(room, memories, spec) {
       roomScoreTitle:room.roomScore.title,
     },
     basis:{
-      sourceRefs:[...new Set(scoredBlocks(room).map(block=>block.sourceRef))].sort(),
+      sourceRefs:basisSourceRefs,
       memoryRefs:[...memoryProjection.memoryRefs],
       memoryInvitations:memoryProjection.prophecy.invitations.map(item=>({
         kind:item.kind,
