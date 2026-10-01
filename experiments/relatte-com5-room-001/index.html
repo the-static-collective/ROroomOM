@@ -170,7 +170,7 @@ textarea{min-height:190px;resize:vertical;background:#0d0d0d;color:#eee;border:1
       <button id="guestExport" disabled>Export Guest Packet</button>
     </div>
     <textarea id="guestPacketView" readonly aria-label="Guest Port packet">(no Guest Packet yet)</textarea>
-    <label>Import one or more guest response JSON files
+    <label>Import one or more Guest Draft or sealed Guest Response JSON files
       <input id="guestImport" type="file" accept="application/json,.json" multiple disabled>
     </label>
     <div id="guestResponses" class="lego"></div>
@@ -883,7 +883,14 @@ q('#guestImport').onchange=async event=>{
   const files=[...(event.target.files ?? [])];
   for(const file of files){
     try{
-      const response=JSON.parse(await file.text());
+      const parsed=JSON.parse(await file.text());
+      const response=parsed?.schema==='roroomom.guest-port-response/v0'
+        ? parsed
+        : await createGuestPortResponse(activeGuestPacket,parsed);
+      if(response?.ok===false){
+        alert(file.name+': '+response.explanation);
+        continue;
+      }
       const imported=await importGuestPortResponse(
         room,loadMemoryLedger(),activeHumanOffer,activeGuestPacket,response
       );
