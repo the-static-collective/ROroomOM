@@ -1,0 +1,20 @@
+name: RSC Epistemic Instrument 001
+
+on:
+  push:
+    branches:
+      - experiment/rsc-epistemic-instrument-001
+  pull_request:
+    paths:
+      - 'experiments/rsc-epistemic-instrument-001/**'
+      - '.github/workflows/rsc-epistemic-instrument-001.yml'
+
+jobs:
+  bounded-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node version
+        run: node --version
+      - name: Run bounded instrument tests
+        run: node experiments/rsc-epistemic-instrument-001/test.cjs
