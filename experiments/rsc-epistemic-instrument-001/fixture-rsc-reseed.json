@@ -1,0 +1,47 @@
+{
+  "kind": "rsc.reseed-packet",
+  "version": "0",
+  "reseed_id": "rsc-demo-epistemic-capability-001",
+  "title": "RSC Live Crossing 001 — Freshness Is a Capability",
+  "source_seed_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "human_selection_required": true,
+  "laws": [
+    "RECOMMENDATION != SELECTION",
+    "CROSSING != COLLAPSE",
+    "EXAPTATION != AUTHORITY",
+    "RESEED != CANON"
+  ],
+  "recommended_next_experiments": [
+    {
+      "crossing_id": "epistemic-capability-contract",
+      "title": "Fresh Listener as a schedulable GHoT capability",
+      "cost": "small",
+      "reversible": true,
+      "requires": [
+        "explicit context posture",
+        "context-audited receipt"
+      ],
+      "produces": [
+        "epistemic capability contract",
+        "fresh-vs-archive receipts"
+      ],
+      "selection_status": "recommendation-only"
+    },
+    {
+      "crossing_id": "room-as-rsc-control-surface",
+      "title": "ROroomOM Epistemic Instrument card",
+      "cost": "medium",
+      "reversible": true,
+      "requires": [
+        "RSC reseed packet import",
+        "explicit human selection"
+      ],
+      "produces": [
+        "human-visible crossing preview",
+        "selected posture receipt"
+      ],
+      "selection_status": "recommendation-only"
+    }
+  ],
+  "fixture_note": "Bounded demonstration packet matching the RSC Composer 001 output contract; not a claim that this file is the canonical live composer output."
+}
