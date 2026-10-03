@@ -1,0 +1,27 @@
+{
+  "kind": "ghot.receipt",
+  "version": "0",
+  "receipt_id": "receipt-demo-fresh-001",
+  "task_id": "task-demo-fresh-001",
+  "requester_node_id": "room-demo",
+  "executor_node_id": "worker-fresh",
+  "capability": "listen.analyze",
+  "context_posture": "fresh",
+  "context_audit": {
+    "supplied_context_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "supplied_context_keys": ["current_track"],
+    "required_context_keys_missing": [],
+    "forbidden_context_keys_present": [],
+    "audit_passed": true
+  },
+  "status": "ok",
+  "started_at": "2026-10-03T00:00:00Z",
+  "finished_at": "2026-10-03T00:00:01Z",
+  "output": {
+    "posture_witness": "fresh",
+    "visible_context_keys": ["current_track"]
+  },
+  "output_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "error": null,
+  "fixture_note": "Demonstration receipt only; not evidence of a real remote GHoT execution."
+}
