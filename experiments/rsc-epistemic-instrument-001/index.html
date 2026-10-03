@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROroomOM — RSC Epistemic Instrument 001</title>
+<style>
+:root{--bg:#111512;--panel:#1a211c;--panel2:#202a23;--edge:#405146;--text:#edf1ec;--muted:#a8b4aa;--gold:#e3c174;--danger:#e49b92;--ok:#9fd4aa}
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top left,#233027 0,#111512 48%);color:var(--text);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+main{max-width:1180px;margin:auto;padding:28px 18px 80px}
+header{padding:26px;border:1px solid var(--edge);border-radius:18px;background:linear-gradient(135deg,#202b24,#171d19);margin-bottom:18px}
+.eyebrow{color:var(--gold);font-size:11px;letter-spacing:.16em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:38px;margin:8px 0 10px}h2{font-size:16px;margin:0 0 12px}p{color:var(--muted)}code{color:#f2d58f}.law{font-size:12px;color:#d8cba8}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{border:1px solid var(--edge);background:rgba(26,33,28,.94);padding:18px;border-radius:15px}.wide{grid-column:1/-1}
+label{display:block;color:var(--muted);font-size:11px;margin:10px 0 5px}input,select,textarea{width:100%;background:#0e120f;border:1px solid #53665a;color:var(--text);border-radius:9px;padding:10px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}textarea{min-height:120px;resize:vertical}
+button{background:var(--gold);color:#1c201d;border:0;border-radius:9px;padding:9px 12px;font-weight:800;cursor:pointer}button.secondary{background:#2e3a32;color:var(--text);border:1px solid #53665a}button:disabled{opacity:.45;cursor:not-allowed}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.status{padding:9px 11px;border-radius:9px;background:#121713;border:1px solid #334139;color:var(--muted);margin:10px 0}.status.ok{border-color:#52765a;color:var(--ok)}.status.bad{border-color:#794d48;color:var(--danger)}
+pre{white-space:pre-wrap;word-break:break-word;background:#0d110e;border:1px solid #334139;padding:12px;border-radius:10px;max-height:420px;overflow:auto;font-size:11px}.recommendation{border-left:3px solid var(--gold);padding:9px 11px;background:#161d18;margin:8px 0}.small{font-size:11px}.check{display:flex;gap:8px;align-items:flex-start;margin:12px 0}.check input{width:auto;margin-top:4px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}h1{font-size:29px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">ROroomOM · EXPERIMENTAL GUEST INSTRUMENT</div>
+  <h1>RSC Epistemic Instrument 001</h1>
+  <p>Inspect an RSC recommendation, declare what an organ may know, make an explicit local selection, export a portable execution parcel, then independently witness a returned GHoT context-audited receipt.</p>
+  <div class="law">RECOMMENDATION != SELECTION · PREPARE != EXECUTE · CONTEXT GRANT != AUTHORITY · RECEIPT != AUTHORITY</div>
+</header>
+
+<div class="grid">
+<section class="card">
+  <h2>1 · Receive RSC reseed</h2>
+  <p class="small">Import an <code>rsc.reseed-packet</code>. Loading a packet creates no execution authority.</p>
+  <input id="reseedFile" type="file" accept=".json,application/json">
+  <div class="row" style="margin-top:10px"><button class="secondary" id="demoReseed">Load bounded demo</button></div>
+  <div id="reseedStatus" class="status">No reseed packet loaded.</div>
+  <div id="recommendations"></div>
+</section>
+
+<section class="card">
+  <h2>2 · Prepare epistemic selection</h2>
+  <label>Recommended crossing</label>
+  <select id="crossing"><option value="">Load a reseed packet first</option></select>
+  <label>Capability</label><input id="capability" value="listen.analyze">
+  <label>Context posture</label>
+  <select id="posture">
+    <option value="fresh">fresh</option>
+    <option value="bounded-window">bounded-window</option>
+    <option value="lineage-enabled">lineage-enabled</option>
+    <option value="owner-local">owner-local</option>
+  </select>
+  <label>Destination</label><input id="destination" value="ghot://worker/fresh">
+  <label>Supplied context keys · comma separated</label><input id="suppliedKeys" value="current_track">
+  <label>Forbidden context keys · comma separated</label><input id="forbiddenKeys" value="catalog_history, prior_dj_transcripts, motif_index, hidden_retrieval">
+  <div class="row" style="margin-top:12px"><button id="prepare">Prepare only</button></div>
+</section>
+
+<section class="card wide">
+  <h2>3 · Inspect before selection</h2>
+  <pre id="prepared">Nothing prepared.</pre>
+  <label class="check"><input id="explicit" type="checkbox"><span>I explicitly select this exact capability, posture, destination, and context manifest. This does not itself execute anything.</span></label>
+  <label>Optional local selection note</label><input id="note" placeholder="Why this crossing is being selected">
+  <div class="row" style="margin-top:12px"><button id="select" disabled>Make explicit selection</button></div>
+</section>
+
+<section class="card">
+  <h2>4 · Bind exact context & export parcel</h2>
+  <p class="small">Paste the exact JSON context intended to cross. The Room computes its SHA-256 locally. Context bytes are not embedded in the parcel.</p>
+  <textarea id="context">{
+  "current_track": {
+    "id": "track-001",
+    "title": "The Circle Was Never Closed"
+  }
+}</textarea>
+  <div class="row" style="margin-top:10px">
+    <button id="parcel" disabled>Build execution parcel</button>
+    <button class="secondary" id="downloadParcel" disabled>Export parcel JSON</button>
+  </div>
+  <div id="parcelStatus" class="status">No parcel built.</div>
+  <pre id="parcelPreview">Nothing exported.</pre>
+</section>
+
+<section class="card">
+  <h2>5 · Witness returned GHoT receipt</h2>
+  <p class="small">Import or paste a real <code>ghot.receipt</code>. ROroomOM verifies posture and the visible context-key audit; it does not claim that a receipt grants authority.</p>
+  <input id="receiptFile" type="file" accept=".json,application/json">
+  <div class="row" style="margin-top:10px"><button class="secondary" id="demoReceipt">Load bounded demo receipt</button></div>
+  <textarea id="receipt" placeholder="Paste GHoT receipt JSON"></textarea>
+  <div class="row" style="margin-top:10px">
+    <button id="witness" disabled>Witness receipt</button>
+    <button class="secondary" id="downloadWitness" disabled>Export witness JSON</button>
+  </div>
+  <div id="receiptStatus" class="status">No receipt witnessed.</div>
+  <pre id="witnessPreview">No witness.</pre>
+</section>
+</div>
+</main>
+
+<script src="./core.js"></script>
+<script>
+'use strict';
+const R = window.RSCEpistemicInstrument;
+let reseed = null, prepared = null, selected = null, parcel = null, witness = null;
+
+const DEMO_RESEED = {
+  kind:'rsc.reseed-packet',version:'0',reseed_id:'rsc-demo-epistemic-capability-001',
+  title:'RSC Live Crossing 001 — Freshness Is a Capability',
+  source_seed_sha256:'1111111111111111111111111111111111111111111111111111111111111111',
+  human_selection_required:true,
+  laws:['RECOMMENDATION != SELECTION','CROSSING != COLLAPSE','EXAPTATION != AUTHORITY','RESEED != CANON'],
+  recommended_next_experiments:[
+    {crossing_id:'epistemic-capability-contract',title:'Fresh Listener as a schedulable GHoT capability',cost:'small',reversible:true,requires:['explicit context posture','context-audited receipt'],produces:['epistemic capability contract'],selection_status:'recommendation-only'},
+    {crossing_id:'room-as-rsc-control-surface',title:'ROroomOM Epistemic Instrument card',cost:'medium',reversible:true,requires:['RSC reseed packet import','explicit human selection'],produces:['human-visible crossing preview'],selection_status:'recommendation-only'}
+  ]
+};
+const DEMO_RECEIPT = {
+  kind:'ghot.receipt',version:'0',receipt_id:'receipt-demo-fresh-001',task_id:'task-demo-fresh-001',
+  requester_node_id:'room-demo',executor_node_id:'worker-fresh',capability:'listen.analyze',context_posture:'fresh',
+  context_audit:{supplied_context_sha256:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',supplied_context_keys:['current_track'],required_context_keys_missing:[],forbidden_context_keys_present:[],audit_passed:true},
+  status:'ok',started_at:'2026-10-03T00:00:00Z',finished_at:'2026-10-03T00:00:01Z',output:{posture_witness:'fresh'},error:null
+};
+
+const $ = id => document.getElementById(id);
+function status(id,msg,kind=''){const el=$(id);el.textContent=msg;el.className='status '+kind}
+function splitKeys(v){return v.split(',').map(x=>x.trim()).filter(Boolean)}
+function pretty(v){return JSON.stringify(v,null,2)}
+function download(name,obj){const b=new Blob([pretty(obj)+'\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function canonical(v){if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';if(v&&typeof v==='object'){return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}'}return JSON.stringify(v)}
+async function sha256(v){const bytes=new TextEncoder().encode(canonical(v));const out=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(out)].map(b=>b.toString(16).padStart(2,'0')).join('')}
+function loadReseed(value){
+  try{
+    const parsed=R.validateReseed(value);reseed=value;prepared=selected=parcel=witness=null;
+    status('reseedStatus',parsed.title+' · '+parsed.recommendations.length+' recommendation(s)','ok');
+    $('crossing').innerHTML=parsed.recommendations.map(x=>'<option value="'+x.crossing_id.replaceAll('"','&quot;')+'">'+x.title+'</option>').join('');
+    $('recommendations').innerHTML=parsed.recommendations.map(x=>'<div class="recommendation"><b>'+x.title+'</b><div class="small">'+x.crossing_id+' · '+(x.cost||'cost ?')+' · '+(x.reversible?'reversible':'not declared reversible')+'</div></div>').join('');
+    $('prepared').textContent='Nothing prepared.';$('parcelPreview').textContent='Nothing exported.';$('witnessPreview').textContent='No witness.';
+    $('select').disabled=true;$('parcel').disabled=true;$('downloadParcel').disabled=true;$('witness').disabled=true;$('downloadWitness').disabled=true;
+  }catch(e){status('reseedStatus',e.message,'bad')}
+}
+async function readJsonFile(file){return JSON.parse(await file.text())}
+
+$('demoReseed').onclick=()=>loadReseed(DEMO_RESEED);
+$('reseedFile').onchange=async e=>{try{loadReseed(await readJsonFile(e.target.files[0]))}catch(err){status('reseedStatus',err.message,'bad')}};
+$('prepare').onclick=()=>{
+  try{
+    if(!reseed)throw new Error('Load an RSC reseed packet first.');
+    prepared=R.prepareSelection(reseed,{
+      crossing_id:$('crossing').value,capability:$('capability').value,context_posture:$('posture').value,destination:$('destination').value,
+      supplied_context_keys:splitKeys($('suppliedKeys').value),forbidden_context_keys:splitKeys($('forbiddenKeys').value)
+    });
+    selected=parcel=witness=null;$('prepared').textContent=pretty(prepared);$('explicit').checked=false;$('select').disabled=true;$('parcel').disabled=true;$('downloadParcel').disabled=true;$('witness').disabled=true;
+  }catch(e){$('prepared').textContent='REFUSED: '+e.message}
+};
+$('explicit').onchange=()=>{$('select').disabled=!prepared||!$('explicit').checked};
+$('select').onclick=()=>{
+  try{
+    selected=R.confirmSelection(prepared,{explicit:$('explicit').checked,note:$('note').value});
+    $('prepared').textContent=pretty(selected);$('parcel').disabled=false;$('witness').disabled=false;
+  }catch(e){$('prepared').textContent='REFUSED: '+e.message}
+};
+$('parcel').onclick=async()=>{
+  try{
+    const context=JSON.parse($('context').value);const keys=Object.keys(context).sort();const expected=[...selected.context_manifest.supplied_context_keys].sort();
+    if(JSON.stringify(keys)!==JSON.stringify(expected))throw new Error('Exact context top-level keys do not match the selected supplied-context manifest.');
+    const digest=await sha256(context);parcel=R.buildExecutionParcel(selected,digest);
+    $('parcelPreview').textContent=pretty(parcel);status('parcelStatus','Parcel prepared locally. No execution has been claimed.','ok');$('downloadParcel').disabled=false;
+  }catch(e){status('parcelStatus',e.message,'bad')}
+};
+$('downloadParcel').onclick=()=>parcel&&download('roroomom-epistemic-execution-parcel.json',parcel);
+
+$('demoReceipt').onclick=()=>{$('receipt').value=pretty(DEMO_RECEIPT)};
+$('receiptFile').onchange=async e=>{try{$('receipt').value=pretty(await readJsonFile(e.target.files[0]))}catch(err){status('receiptStatus',err.message,'bad')}};
+$('witness').onclick=()=>{
+  try{
+    if(!selected)throw new Error('Make an explicit selection first.');
+    const receipt=JSON.parse($('receipt').value);witness=R.witnessReceipt(selected,receipt);
+    $('witnessPreview').textContent=pretty(witness);status('receiptStatus','Receipt matches selected posture and visible context-key audit. Accepted for inspection only.','ok');$('downloadWitness').disabled=false;
+  }catch(e){$('witnessPreview').textContent='REFUSED: '+e.message;status('receiptStatus',e.message,'bad');$('downloadWitness').disabled=true}
+};
+$('downloadWitness').onclick=()=>witness&&download('roroomom-epistemic-receipt-witness.json',witness);
+</script>
+</body>
+</html>
